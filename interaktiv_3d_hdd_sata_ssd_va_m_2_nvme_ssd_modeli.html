@@ -1,0 +1,3438 @@
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D HDD & SSD — Fotorealistik CAD Simulyator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600;700&display=swap" rel="stylesheet">
+    <!-- Three.js, OrbitControls va GSAP -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+    <style>
+        :root {
+            --bg-radial: radial-gradient(circle at 50% 45%, #1e293b 0%, #0f172a 58%, #04070f 100%);
+            --glass-bg: rgba(10, 16, 29, 0.78);
+            --glass-border: rgba(148, 163, 184, 0.22);
+            --text-primary: #f8fafc;
+        }
+        body.studio-light {
+            --bg-radial: radial-gradient(circle at 50% 45%, #ffffff 0%, #f1f5f9 65%, #cbd5e1 100%);
+            --glass-bg: rgba(255, 255, 255, 0.86);
+            --glass-border: rgba(15, 23, 42, 0.14);
+            --text-primary: #0f172a;
+        }
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: var(--bg-radial);
+            font-family: 'Inter', sans-serif;
+            color: var(--text-primary);
+            transition: background 0.35s ease;
+        }
+        #canvas-container {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            z-index: 1;
+        }
+        #callout-svg {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 3;
+        }
+        #pins-container {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            z-index: 4;
+            overflow: hidden;
+        }
+        .glass-dock {
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            background: var(--glass-bg);
+            border: 1px solid var(--glass-border);
+            box-shadow: 0 18px 42px -10px rgba(0, 0, 0, 0.55);
+            pointer-events: auto;
+            transition: all 0.25s ease;
+        }
+        /* Minimalistik 3D Raqamli Pinlar (Ichki qismlarni aslo to'smaydi) */
+        .pin-marker {
+            position: absolute;
+            transform: translate(-50%, -50%);
+            pointer-events: auto;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 3px 9px 3px 3px;
+            border-radius: 999px;
+            background: rgba(9, 14, 26, 0.88);
+            border: 1.5px solid rgba(56, 189, 248, 0.65);
+            color: #f8fafc;
+            box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+            transition: transform 0.18s cubic-bezier(0.34, 1.56, 0.64, 1), border-color 0.2s, background 0.2s;
+            white-space: nowrap;
+        }
+        body.studio-light .pin-marker {
+            background: rgba(255, 255, 255, 0.94);
+            color: #0f172a;
+            border-color: #0284c7;
+            box-shadow: 0 4px 14px rgba(15, 23, 42, 0.15);
+        }
+        .pin-marker:hover {
+            transform: translate(-50%, -50%) scale(1.12);
+            border-color: #38bdf8;
+            z-index: 30;
+        }
+        .pin-marker.active {
+            border-color: #f59e0b;
+            background: rgba(245, 158, 11, 0.22);
+            box-shadow: 0 0 20px rgba(245, 158, 11, 0.55);
+            transform: translate(-50%, -50%) scale(1.14);
+            z-index: 35;
+        }
+        body.studio-light .pin-marker.active {
+            background: #fef3c7;
+            color: #78350f;
+        }
+        .pin-num {
+            width: 21px;
+            height: 21px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #0284c7, #1d4ed8);
+            color: #ffffff;
+            font-weight: 800;
+            font-size: 11px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+        .pin-marker.active .pin-num {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+        }
+        .pin-label {
+            font-size: 10.5px;
+            font-weight: 700;
+            letter-spacing: 0.01em;
+            padding-right: 2px;
+        }
+        /* Pastki qism tanlash tugmalari (1..10) */
+        .part-pill {
+            transition: all 0.18s ease;
+        }
+        .part-pill.active {
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: #090d16;
+            border-color: #fbbf24;
+            box-shadow: 0 0 14px rgba(245, 158, 11, 0.5);
+            font-weight: 800;
+        }
+        /* Range slider */
+        input[type=range] {
+            -webkit-appearance: none;
+            background: transparent;
+        }
+        input[type=range]::-webkit-slider-runnable-track {
+            height: 5px;
+            border-radius: 999px;
+            background: linear-gradient(90deg, #0284c7, #38bdf8, #f59e0b);
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            border-radius: 50%;
+            background: #ffffff;
+            border: 3px solid #0284c7;
+            margin-top: -5.5px;
+            cursor: pointer;
+            box-shadow: 0 0 8px rgba(2, 132, 199, 0.8);
+        }
+        /* Maxsus Neon Glassmorphism Scrollbar Dizayni */
+        .custom-scrollbar {
+            scrollbar-width: thin;
+            scrollbar-color: #06b6d4 rgba(15, 23, 42, 0.55);
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            height: 6px;
+            width: 6px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(15, 23, 42, 0.55);
+            border-radius: 999px;
+            margin: 0 8px;
+            border: 1px solid rgba(148, 163, 184, 0.12);
+        }
+        body.studio-light .custom-scrollbar::-webkit-scrollbar-track {
+            background: rgba(203, 213, 225, 0.65);
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background: linear-gradient(90deg, #06b6d4, #3b82f6, #0284c7);
+            border-radius: 999px;
+            box-shadow: 0 0 10px rgba(6, 182, 212, 0.65);
+            transition: all 0.25s ease;
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+            background: linear-gradient(90deg, #22d3ee, #60a5fa, #f59e0b);
+            box-shadow: 0 0 14px rgba(34, 211, 238, 0.95);
+        }
+        .device-switch-btn {
+            transition: all 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .device-switch-btn.active-hdd {
+            background: linear-gradient(135deg, #0284c7, #2563eb);
+            color: #ffffff;
+            box-shadow: 0 0 16px rgba(2, 132, 199, 0.55);
+        }
+        .device-switch-btn.active-ssd {
+            background: linear-gradient(135deg, #06b6d4, #0d9488);
+            color: #ffffff;
+            box-shadow: 0 0 16px rgba(6, 182, 212, 0.55);
+        }
+        .device-switch-btn.active-nvme {
+            background: linear-gradient(135deg, #8b5cf6, #ec4899);
+            color: #ffffff;
+            box-shadow: 0 0 16px rgba(236, 72, 153, 0.55);
+        }
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- 3D WebGL Sahna (100% Ekranda, hech narsa to'smaydi) -->
+    <div id="canvas-container"></div>
+
+    <!-- Tashqi Perimetr Ko'rsatkich Chiziqlari -->
+    <svg id="callout-svg"></svg>
+
+    <!-- Tashqi Perimetr Raqamli Pinlari (1..10) -->
+    <div id="pins-container"></div>
+
+    <!-- YUQORI MINIMAL PANEL: Qurilma Tanlash (HDD / SATA SSD / M.2 NVMe), Ko'rinish Rejimi va Kamera Rakurslari -->
+    <header class="fixed top-3 left-3 right-3 z-20 pointer-events-none flex flex-wrap items-center justify-between gap-2">
+        <!-- Chap: QURILMANI ALMASHTIRISH (HDD <-> SATA SSD <-> M.2 NVMe) VA HOLAT INDIKATORI -->
+        <div class="glass-dock p-1 pr-3.5 rounded-full flex items-center gap-2.5">
+            <div class="flex items-center bg-slate-950/60 p-0.5 rounded-full border border-slate-700/50">
+                <button id="btn-device-hdd" class="device-switch-btn active-hdd px-2.5 py-1 rounded-full text-[11px] font-extrabold tracking-tight flex items-center gap-1">
+                    <span>💿</span>
+                    <span>HDD 3.5"</span>
+                </button>
+                <button id="btn-device-ssd" class="device-switch-btn px-2.5 py-1 rounded-full text-[11px] font-extrabold tracking-tight opacity-75 hover:opacity-100 flex items-center gap-1">
+                    <span>⚡</span>
+                    <span>SATA SSD</span>
+                </button>
+                <button id="btn-device-nvme" class="device-switch-btn px-2.5 py-1 rounded-full text-[11px] font-extrabold tracking-tight opacity-75 hover:opacity-100 flex items-center gap-1">
+                    <span>🚀</span>
+                    <span>M.2 NVMe</span>
+                </button>
+            </div>
+            <div class="h-3.5 w-px bg-slate-600/50"></div>
+            <div class="flex items-center gap-1.5">
+                <span id="status-led" class="w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_#34d399]"></span>
+                <span id="rpm-readout" class="mono text-[11px] font-bold text-sky-400">7200 RPM</span>
+            </div>
+        </div>
+
+        <!-- Markaz: 3 XIL KO'RINISH REJIMI (Ochiq / Yopiq Qopqoq / Parchalash) -->
+        <div class="glass-dock p-1 rounded-full flex items-center gap-1 text-[11px]">
+            <button id="btn-view-open" class="px-3 py-1 rounded-full font-bold bg-sky-600 text-white shadow transition">
+                Ichki Tuzilishi (Ochiq)
+            </button>
+            <button id="btn-view-closed" class="px-3 py-1 rounded-full font-semibold opacity-75 hover:opacity-100 transition">
+                🛡️ Qopqoq / Radiator
+            </button>
+            <button id="btn-view-explode" class="px-3 py-1 rounded-full font-semibold opacity-75 hover:opacity-100 transition">
+                Parchalash (100%)
+            </button>
+        </div>
+
+        <!-- O'ng: KAMERA RAKURSLARI VA FON TUGMASI -->
+        <div class="glass-dock px-2.5 py-1.5 rounded-full flex items-center gap-1.5 text-[11px]">
+            <button id="cam-iso" class="px-2 py-0.5 rounded-full hover:bg-sky-500/20 font-semibold transition" title="Standart Izometrik Rakurs">
+                📐 Izometrik
+            </button>
+            <button id="cam-top" class="px-2 py-0.5 rounded-full hover:bg-sky-500/20 font-semibold transition" title="Yuqori Plan">
+                ⬆️ Yuqoridan
+            </button>
+            <button id="cam-front" class="px-2 py-0.5 rounded-full hover:bg-sky-500/20 font-semibold transition" title="Ulagichlar Plani">
+                🔌 Ulagich Oldi
+            </button>
+            <div class="h-3.5 w-px bg-slate-600/50"></div>
+            <button id="btn-theme" class="px-2 py-0.5 rounded-full hover:bg-sky-500/20 font-bold transition" title="Oq / Qorong'u Studiya foni">
+                ☀️ Fon
+            </button>
+        </div>
+    </header>
+
+    <!-- TANLANGAN QISM KARTOCHKASI (Faqat detal tanlanganda o'ng-yuqori burchakda ixcham chiqadi, 3D modelni to'smaydi) -->
+    <aside id="part-info-card" class="custom-scrollbar fixed top-16 right-4 z-20 w-72 md:w-80 max-h-[70vh] overflow-y-auto glass-dock rounded-2xl p-3.5 transition-all duration-300 opacity-0 pointer-events-none translate-x-6">
+        <div class="flex items-start justify-between gap-2 pb-2 border-b border-slate-600/30">
+            <div class="flex items-center gap-2">
+                <span id="card-num" class="w-6 h-6 rounded-full bg-amber-500 text-slate-950 font-extrabold text-xs flex items-center justify-center flex-shrink-0">1</span>
+                <div>
+                    <h3 id="card-title" class="text-xs md:text-sm font-extrabold leading-tight">Magnit plastinalar</h3>
+                    <p id="card-en" class="text-[10px] font-bold text-sky-400 uppercase tracking-wider">PLATTERS</p>
+                </div>
+            </div>
+            <button id="btn-close-card" class="w-6 h-6 rounded-full hover:bg-slate-700/50 flex items-center justify-center text-xs opacity-75 hover:opacity-100 transition" title="Kartochkani yopish va umumiy planga qaytish">
+                ✕
+            </button>
+        </div>
+        <p id="card-desc" class="text-[11px] leading-relaxed opacity-90 mt-2">
+            Ma'lumotlarni saqlovchi magnit qatlam bilan qoplangan, oyna kabi silliq aylanuvchi disklar.
+        </p>
+        <div id="card-specs" class="mt-2 pt-2 border-t border-slate-600/30 text-[10px] mono space-y-0.5 text-sky-400">
+        </div>
+        <div class="mt-2.5 flex items-center gap-1.5">
+            <button id="btn-card-zoom" class="flex-1 py-1 px-2.5 rounded-lg bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/40 text-sky-300 text-[10.5px] font-bold transition">
+                🔍 Yaqinroq ko'rish
+            </button>
+            <button id="btn-card-isolate" class="py-1 px-2.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-300 text-[10.5px] font-bold transition">
+                👁️ Yakka o'zi
+            </button>
+        </div>
+    </aside>
+
+    <!-- PASTKI SUZUVCHI KOMPAKT DOCK: 1..10 Qismlar (Dizaynli Scrollbar bilan) + Parchalash Slayderi + Quvvat -->
+    <footer class="fixed bottom-3 left-1/2 -translate-x-1/2 z-20 w-[96vw] max-w-4xl pointer-events-none flex flex-col items-center gap-1.5">
+        
+        <!-- 1 dan 10 gacha qismlarni bir bosishda yaqinlashtiruvchi ixcham qator + chap/o'ng skroll tugmalari -->
+        <div class="glass-dock px-2 py-1.5 rounded-2xl flex items-center gap-1.5 w-full">
+            <button id="btn-scroll-left" class="w-6 h-6 rounded-full bg-slate-800/90 hover:bg-sky-500/30 text-sky-300 border border-slate-600/50 flex items-center justify-center text-xs font-bold flex-shrink-0 transition" title="Chapga surish">
+                ‹
+            </button>
+            <div id="part-pills-bar" class="custom-scrollbar flex items-center gap-1.5 overflow-x-auto pb-1 pt-0.5 px-1 flex-1 scroll-smooth">
+                <button id="btn-all-parts" class="px-2.5 py-1 rounded-full text-[10.5px] font-bold bg-sky-600 text-white whitespace-nowrap transition flex-shrink-0">
+                    Barchasi
+                </button>
+                <!-- 1..10 tugmalar JS orqali qo'shiladi -->
+            </div>
+            <button id="btn-scroll-right" class="w-6 h-6 rounded-full bg-slate-800/90 hover:bg-sky-500/30 text-sky-300 border border-slate-600/50 flex items-center justify-center text-xs font-bold flex-shrink-0 transition" title="O'ngga surish">
+                ›
+            </button>
+        </div>
+
+        <!-- Asosiy Boshqaruv Slayderi va Tugmalar -->
+        <div class="glass-dock px-4 py-2 rounded-full w-full flex flex-wrap items-center justify-between gap-3">
+            <!-- Parchalash Slayderi -->
+            <div class="flex items-center gap-2.5 flex-1 min-w-[230px]">
+                <button id="btn-quick-assemble" class="px-2.5 py-1 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-200 text-[10.5px] font-bold border border-slate-600/50 transition whitespace-nowrap">
+                    ⬇ Yig'ish
+                </button>
+                <div class="flex-1 flex items-center gap-2">
+                    <input id="explode-range" type="range" min="0" max="100" value="0" class="w-full">
+                    <span id="explode-pct" class="mono text-[11px] font-bold text-sky-400 w-9 text-right">0%</span>
+                </div>
+                <button id="btn-quick-explode" class="px-2.5 py-1 rounded-full bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[10.5px] font-bold border border-amber-400/40 transition whitespace-nowrap">
+                    ⬆ Parchalash
+                </button>
+            </div>
+
+            <div class="hidden sm:block h-4 w-px bg-slate-600/50"></div>
+
+            <!-- Jonli Funksiyalar -->
+            <div class="flex items-center gap-1.5">
+                <button id="btn-power-toggle" class="px-3 py-1 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-300 text-[11px] font-bold transition">
+                    ⚡ Quvvat: ON
+                </button>
+                <button id="btn-speed-toggle" class="px-2.5 py-1 rounded-full bg-purple-500/20 hover:bg-purple-500/30 border border-purple-400/40 text-purple-300 text-[11px] font-bold transition" title="Sekinlashtirilgan rejim">
+                    ⏱️ 7200 RPM
+                </button>
+                <button id="btn-pins-toggle" class="px-2.5 py-1 rounded-full bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/40 text-sky-300 text-[11px] font-bold transition">
+                    🏷️ Raqamlar: ON
+                </button>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // ============================================================================
+        // 1. HDD (3.5") VA SSD (2.5") UCHUN 10 TADAN HAQIQIY QISMLAR VA MAKRO-ZOOM RAKURSLARI
+        // ============================================================================
+        const HDD_PARTS_DATA = [
+            {
+                num: 1,
+                id: 'platters',
+                name: 'Magnit plastinalar',
+                en: '1. PLATTERS',
+                desc: 'Ma\'lumotlarni saqlovchi kobalt-platina magnit qatlamli 4 qavat oyna kabi silliq disklar. Har bir plastina oralig\'ida CNC-frezalangan halqalar joylashgan.',
+                specs: ['• 4 ta oyna-plastina (8 ta ishchi yuza)', '• Qoplama: CoCrPt nano-magnit qotishma', '• Silliqlik: Oyna jilosi (Ra < 0.1 nm)'],
+                explodeOffset: new THREE.Vector3(0, 3.1, 0),
+                anchorLocal: new THREE.Vector3(-2.35, 0.72, -1.65),
+                pinOuter: new THREE.Vector3(-5.15, 0.85, -2.55),
+                zoomCam: new THREE.Vector3(-4.2, 4.8, 1.8),
+                zoomTarget: new THREE.Vector3(-1.1, 0.55, -1.1)
+            },
+            {
+                num: 2,
+                id: 'spindle_motor',
+                name: 'Shpindel motori',
+                en: '2. SPINDLE MOTOR',
+                desc: 'Plastinalarni 5400 yoki 7200 RPM tezlikda tebranishsiz aylantiruvchi 12-qutbli cho\'tkasiz motor, 6 ta Torx T6 vintli po\'lat vtulka va ko\'k anodlangan markaziy halqa.',
+                specs: ['• Tezlik: 7200 RPM (Suyuq dinamik podshipnik)', '• Ustki qisqich: 6 ta Torx T6 mikro-vintlar', '• Stator: 12-qutbli mis chulg\'amli motor'],
+                explodeOffset: new THREE.Vector3(0, 4.9, 0),
+                anchorLocal: new THREE.Vector3(0.0, 0.92, -1.15),
+                pinOuter: new THREE.Vector3(-5.15, 0.95, -0.75),
+                zoomCam: new THREE.Vector3(0.0, 4.2, 1.8),
+                zoomTarget: new THREE.Vector3(0.0, 0.72, -1.15)
+            },
+            {
+                num: 3,
+                id: 'actuator_arm',
+                name: 'Aktuator qo\'li va VCM',
+                en: '3. ACTUATOR ARM',
+                desc: 'O\'qish/yozish kallaklarini yo\'lakchalar bo\'ylab harakatlantiruvchi 3 ta dumaloq teshikli uchburchak alyuminiy dastak, burchakdagi VCM neodimiy magnit plitasi hamda silindrik mis Kapton shleyf o\'rami.',
+                specs: ['• Shakli: 3 ta yengillashtiruvchi teshikli qo\'l', '• Yuritma: VCM Neodimiy magnit va g\'altak', '• Shleyf: Silindrik mis-oltin Kapton o\'rami'],
+                explodeOffset: new THREE.Vector3(-1.4, 2.3, 0.9),
+                anchorLocal: new THREE.Vector3(-1.15, 0.75, 1.65),
+                pinOuter: new THREE.Vector3(-5.15, 0.75, 1.35),
+                zoomCam: new THREE.Vector3(-4.1, 4.6, 4.6),
+                zoomTarget: new THREE.Vector3(-1.05, 0.55, 1.55)
+            },
+            {
+                num: 4,
+                id: 'rw_head',
+                name: 'O\'qish/Yozish kallagi',
+                en: '4. READ/WRITE HEAD',
+                desc: 'Plastina sirtiga tegmasdan (3 nm havo yostiqchasida suzib), magnit signallar orqali ma\'lumot o\'quvchi va yozuvchi ingichka po\'lat osma hamda TMR mikro-slayderlar.',
+                specs: ['• Masofa: Sirtdan 3 nanometr balandlikda suzadi', '• Kallaklar soni: 8 ta TMR nano-slayder', '• Ulanish: Zarhal mikro-o\'tkazgich tolalar'],
+                explodeOffset: new THREE.Vector3(-0.6, 3.6, 0.4),
+                anchorLocal: new THREE.Vector3(0.45, 0.76, 0.18),
+                pinOuter: new THREE.Vector3(-5.15, 0.65, 3.25),
+                zoomCam: new THREE.Vector3(0.4, 3.2, 2.5),
+                zoomTarget: new THREE.Vector3(0.35, 0.65, 0.18)
+            },
+            {
+                num: 5,
+                id: 'top_cover',
+                name: 'Tashqi qopqoq ("HDD")',
+                en: '5. TOP COVER',
+                desc: '2-rasmdagi kabi bo\'rtma "HDD" yozuvi, markaziy botiq halqasi va perimetr bo\'ylab 6 ta silindrik murvatga ega kumushrang alyuminiy germetik qopqoq.',
+                specs: ['• Material: Cho\'tkalangan silliq alyuminiy', '• Muhr: Qora EPDM rezina qistirma', '• Mahkamlash: 6 ta perimetr Torx murvatlari'],
+                explodeOffset: new THREE.Vector3(0, 6.8, 0),
+                anchorLocal: new THREE.Vector3(3.15, 1.12, -4.45),
+                pinOuter: new THREE.Vector3(5.15, 1.1, -3.55),
+                zoomCam: new THREE.Vector3(0.0, 9.8, 7.6),
+                zoomTarget: new THREE.Vector3(0.0, 1.1, 0.0)
+            },
+            {
+                num: 6,
+                id: 'air_filter',
+                name: 'Havo filtri',
+                en: '6. AIR FILTER',
+                desc: 'Yuqori-o\'ng burchakdagi aerodinamik kanalga o\'rnatilgan yoysimon oq Gore-Tex mikro-filtr. Aylanayotgan disklar hosil qilgan havo oqimini mikroskopik zarralardan tozalaydi.',
+                specs: ['• Joylashuv: Yuqori-o\'ng burchakdagi uyada', '• Material: G\'ovakli ePTFE oq membrana', '• Vazifasi: Ichki germetik tozalikni saqlash'],
+                explodeOffset: new THREE.Vector3(1.8, 2.4, -1.4),
+                anchorLocal: new THREE.Vector3(2.75, 0.72, -3.15),
+                pinOuter: new THREE.Vector3(5.15, 0.85, -1.65),
+                zoomCam: new THREE.Vector3(4.8, 4.4, -1.2),
+                zoomTarget: new THREE.Vector3(2.65, 0.58, -3.1)
+            },
+            {
+                num: 7,
+                id: 'parking_ramp',
+                name: 'Parkovka rampasi',
+                en: '7. PARKING RAMP',
+                desc: 'Plastinalarning o\'ng qirrasiga o\'rnatilgan yorqin to\'q sariq (oranj) polimer rampa. Disk to\'xtaganda o\'qish/yozish kallaklarini xavfsiz ushlab turadi.',
+                specs: ['• Material: To\'q sariq antifriksion Poliatsetal', '• Qulflash: Kumush Torx mahkamlash vinti', '• Quvvat o\'chirilganda kallak shu yerga qaytadi'],
+                explodeOffset: new THREE.Vector3(2.1, 2.1, 0.2),
+                anchorLocal: new THREE.Vector3(2.82, 0.72, 0.42),
+                pinOuter: new THREE.Vector3(5.15, 0.75, 0.35),
+                zoomCam: new THREE.Vector3(5.2, 3.8, 2.2),
+                zoomTarget: new THREE.Vector3(2.68, 0.58, 0.42)
+            },
+            {
+                num: 8,
+                id: 'controller_pcb',
+                name: 'Boshqaruv platasi (PCB)',
+                en: '8. CONTROLLER PCB',
+                desc: '1-rasmdagi kabi o\'ng-pastki kesim bo\'lmasida joylashgan zumrad-yashil elektron plata, 3 ta asosiy QFP/BGA mikrochip (Controller, DRAM, Smooth Driver), oltin yo\'laklar va SMD detallar.',
+                specs: ['• Chiplar: MCU SoC, DDR4 Cache, VCM Driver', '• Qatlam: Ko\'p qatlamli yashil FR-4 tekstolit', '• Detallar: SMD kondensatorlar va oltin kontaktlar'],
+                explodeOffset: new THREE.Vector3(1.2, -2.2, 1.0),
+                anchorLocal: new THREE.Vector3(1.55, 0.32, 2.85),
+                pinOuter: new THREE.Vector3(5.15, 0.55, 2.45),
+                zoomCam: new THREE.Vector3(3.4, 4.4, 5.6),
+                zoomTarget: new THREE.Vector3(1.35, 0.25, 2.75)
+            },
+            {
+                num: 9,
+                id: 'sata_data',
+                name: 'SATA ma\'lumot ulagichi',
+                en: '9. SATA DATA CONNECTOR',
+                desc: 'Old-pastki chap qirrada joylashgan 7 ta yaltiroq oltin pinli L-simon ulagich. HDD va kompyuter anakarti o\'rtasida 6 Gbit/s tezlikda ma\'lumot uzatadi.',
+                specs: ['• Standart: SATA III (6.0 Gbit/s — 600 MB/s)', '• Kontaktlar: 7 ta 24K oltin qoplamali pin', '• Shakli: Kalitli L-simon qora kolodka'],
+                explodeOffset: new THREE.Vector3(-0.8, -2.5, 2.2),
+                anchorLocal: new THREE.Vector3(-1.55, -0.18, 4.92),
+                pinOuter: new THREE.Vector3(-2.85, -0.55, 6.05),
+                zoomCam: new THREE.Vector3(-2.2, 1.6, 8.2),
+                zoomTarget: new THREE.Vector3(-1.55, -0.15, 4.85)
+            },
+            {
+                num: 10,
+                id: 'sata_power',
+                name: 'SATA quvvat ulagichi',
+                en: '10. SATA POWER CONNECTOR',
+                desc: 'Old-pastki o\'ng qirrada joylashgan 15 ta oltin pinli keng ulagich. Diskni +5V va +12V elektr quvvati bilan ta\'minlaydi. Ustida "6RYKG5V1" shtrix-kodi joylashgan.',
+                specs: ['• Kuchlanish: +12V (Motor) va +5V (PCB mantiq)', '• Kontaktlar: 15 ta zarhal pinli L-ulagich', '• Seriya yorlig\'i: 6RYKG5V1 shtrix-kodi'],
+                explodeOffset: new THREE.Vector3(0.8, -2.5, 2.2),
+                anchorLocal: new THREE.Vector3(1.15, -0.18, 4.92),
+                pinOuter: new THREE.Vector3(2.85, -0.55, 6.05),
+                zoomCam: new THREE.Vector3(2.2, 1.6, 8.2),
+                zoomTarget: new THREE.Vector3(1.15, -0.15, 4.85)
+            }
+        ];
+
+        const SSD_PARTS_DATA = [
+            {
+                num: 1,
+                id: 'ssd_nand',
+                name: '3D NAND Flash Chiplari',
+                en: '1. 3D TLC NAND FLASH (x8)',
+                desc: 'Mexanik harakatlanuvchi qismlarsiz ma\'lumotlarni elektr zaryadi ko\'rinishida saqlovchi 8 ta yuqori zichlikdagi 176-qatlamli 3D TLC NAND Flash BGA xotira mikrosxemalari.',
+                specs: ['• Arxitektura: 8 x 256GB 3D TLC V-NAND (2.0 TB)', '• Korpus: 132-Ball BGA oltin kontaktli paket', '• Kirish vaqti: 0.04 ms (HDD dan 100 barobar tez)'],
+                explodeOffset: new THREE.Vector3(0, 2.6, -0.5),
+                anchorLocal: new THREE.Vector3(-1.45, 0.36, -1.75),
+                pinOuter: new THREE.Vector3(-4.85, 0.75, -2.45),
+                zoomCam: new THREE.Vector3(-3.8, 4.2, 0.8),
+                zoomTarget: new THREE.Vector3(-1.1, 0.32, -1.45)
+            },
+            {
+                num: 2,
+                id: 'ssd_controller',
+                name: 'SSD Kontroller Prozessori',
+                en: '2. MULTI-CORE SSD CONTROLLER',
+                desc: 'SSD ning "miyasi" — 8-kanalli ARM Cortex-R8 protsessori. Ma\'lumotlarni shifrlash (AES-256), xatolarni tuzatish (LDPC ECC) va bloklar yeyilishini tekislashni (Wear Leveling) boshqaradi.',
+                specs: ['• Chip: 8-kanalli Phison/Samsung ARM SoC', '• Qopqoq: Nikel bilan qoplangan mis issiqlik tarqatgich', '• Shifrlash: Real-vaqtda AES-256 va S.M.A.R.T.'],
+                explodeOffset: new THREE.Vector3(-0.6, 3.8, 0.4),
+                anchorLocal: new THREE.Vector3(-0.95, 0.38, 2.25),
+                pinOuter: new THREE.Vector3(-4.85, 0.75, 1.55),
+                zoomCam: new THREE.Vector3(-3.2, 3.6, 4.8),
+                zoomTarget: new THREE.Vector3(-0.95, 0.32, 2.25)
+            },
+            {
+                num: 3,
+                id: 'ssd_dram',
+                name: 'DRAM Kesh Xotira (DDR4)',
+                en: '3. LPDDR4 DRAM CACHE',
+                desc: 'Fayllarning mantiqiy-fizik manzillar jadvalini (FTL Mapping Table) saqlovchi tezkor 2GB LPDDR4 bufer xotira chipi. Tasodifiy o\'qish/yozish (IOPS) tezligini keskin oshiradi.',
+                specs: ['• Hajmi: 2048 MB LPDDR4-4266 SDRAM', '• Vazifasi: FTL xarita jadvali va tezkor bufer', '• Tezlik: 98,000 IOPS random 4K read'],
+                explodeOffset: new THREE.Vector3(0.8, 3.4, 0.3),
+                anchorLocal: new THREE.Vector3(0.75, 0.36, 2.15),
+                pinOuter: new THREE.Vector3(4.85, 0.75, 1.45),
+                zoomCam: new THREE.Vector3(3.2, 3.6, 4.8),
+                zoomTarget: new THREE.Vector3(0.75, 0.32, 2.15)
+            },
+            {
+                num: 4,
+                id: 'ssd_pcb',
+                name: 'Yuqori Zichlikdagi Plata (PCB)',
+                en: '4. 8-LAYER HIGH-SPEED PCB',
+                desc: 'Barcha NAND chiplar, kontroller va DRAM xotirani 24K oltin qoplamali differensial mis shinalar orqali bog\'lovchi ko\'p qatlamli ko\'k-zumrad elektron plata.',
+                specs: ['• Qatlamlar: 8-qatlamli FR-4 High-Tg tekstolit', '• Shinalar: Yuqori chastotali impedans yo\'laklar', '• Vizual: Jonli elektron ma\'lumot impulslari oqimi'],
+                explodeOffset: new THREE.Vector3(0, 0.6, 0),
+                anchorLocal: new THREE.Vector3(0.0, 0.16, 0.15),
+                pinOuter: new THREE.Vector3(-4.85, 0.45, -0.35),
+                zoomCam: new THREE.Vector3(0.0, 6.2, 4.2),
+                zoomTarget: new THREE.Vector3(0.0, 0.18, 0.2)
+            },
+            {
+                num: 5,
+                id: 'ssd_top_cover',
+                name: 'Ustki Alyuminiy Korpus ("SSD")',
+                en: '5. ANODIZED TOP ENCLOSURE',
+                desc: '2.5 dyuymli (7 mm qalinlikdagi) zarbaga chidamli anodlangan titan-kumush alyuminiy ustki qopqoq. Ichki chiplardan chiqqan issiqlikni butun yuza bo\'ylab tarqatadi.',
+                specs: ['• Form-faktor: 2.5" SATA (100 x 69.85 x 7 mm)', '• Material: CNC faskali anodlangan alyuminiy', '• Chidamlilik: 1500G zarba va tebranishdan himoya'],
+                explodeOffset: new THREE.Vector3(0, 6.4, 0),
+                anchorLocal: new THREE.Vector3(2.85, 0.82, -3.95),
+                pinOuter: new THREE.Vector3(4.85, 1.05, -3.45),
+                zoomCam: new THREE.Vector3(0.0, 9.2, 7.2),
+                zoomTarget: new THREE.Vector3(0.0, 0.8, 0.0)
+            },
+            {
+                num: 6,
+                id: 'ssd_thermal_pad',
+                name: 'Termal Sovutish Padlari',
+                en: '6. SILICone THERMAL PADS',
+                desc: 'Kontroller, DRAM va NAND chiplar ustiga yopishtirilgan yuqori issiqlik o\'tkazuvchan ko\'k kremniy-polimer yostiqchalar. Issiqlikni ustki metall korpusga uzatadi.',
+                specs: ['• Issiqlik o\'tkazuvchanlik: 6.5 W/m·K', '• Joylashuv: NAND va ARM Kontroller ustida', '• Vazifasi: Thermal Throttling (qizish) oldini olish'],
+                explodeOffset: new THREE.Vector3(1.5, 4.7, -0.2),
+                anchorLocal: new THREE.Vector3(1.35, 0.52, -1.15),
+                pinOuter: new THREE.Vector3(4.85, 0.85, -1.55),
+                zoomCam: new THREE.Vector3(4.2, 4.5, 0.5),
+                zoomTarget: new THREE.Vector3(1.1, 0.45, -0.8)
+            },
+            {
+                num: 7,
+                id: 'ssd_pmic_plp',
+                name: 'Quvvat va PLP Kondensatorlar',
+                en: '7. PMIC & PLP CAPACITORS',
+                desc: 'To\'satdan elektr o\'chganda keshdagi ma\'lumotlarni NAND xotiraga xavfsiz yozib ulgurish uchun zaxira energiya beruvchi sariq Tantal kondensatorlar (PLP) va PMIC quvvat kontrolleri.',
+                specs: ['• Himoya: PLP (Power Loss Protection) tizimi', '• Elementlar: Sariq Tantal kondensatorlar + drossellar', '• Kuchlanish: 3.3V / 1.8V / 1.2V ko\'p fazali VRM'],
+                explodeOffset: new THREE.Vector3(1.6, 2.2, 0.6),
+                anchorLocal: new THREE.Vector3(2.05, 0.34, 2.65),
+                pinOuter: new THREE.Vector3(4.85, 0.65, 2.85),
+                zoomCam: new THREE.Vector3(4.1, 3.4, 5.2),
+                zoomTarget: new THREE.Vector3(1.85, 0.28, 2.55)
+            },
+            {
+                num: 8,
+                id: 'ssd_bottom_case',
+                name: 'Ostki Metall Korpus va Pasport',
+                en: '8. BOTTOM CNC SHELL & LABEL',
+                desc: 'PCB platani mahkam ushlab turuvchi misi-bronza vanna ustunlariga ega quyi metall korpus hamda old qirradagi zavod shtrix-kodi.',
+                specs: ['• Qotishma: Qora anodlangan AL-6061 shassi', '• Mahkamlash: 4 ta guruch (brass) tayanch ustun', '• Yorliq: NVMe/SATA Enterprise seriya pasporti'],
+                explodeOffset: new THREE.Vector3(0, -2.4, 0),
+                anchorLocal: new THREE.Vector3(-2.75, -0.22, 3.35),
+                pinOuter: new THREE.Vector3(-4.85, -0.25, 3.35),
+                zoomCam: new THREE.Vector3(-4.5, 2.8, 6.2),
+                zoomTarget: new THREE.Vector3(-1.5, -0.2, 2.5)
+            },
+            {
+                num: 9,
+                id: 'ssd_sata_data',
+                name: 'SATA III Data Ulagichi',
+                en: '9. SATA III DATA (6 Gbps)',
+                desc: 'SSD va kompyuter anakarti o\'rtasida 560 MB/s gacha tezlikda ma\'lumot almashuvchi 7 ta 24K oltin kontaktli L-simon raqamli interfeys.',
+                specs: ['• O\'tkazuvchanlik: 560 MB/s O\'qish / 530 MB/s Yozish', '• Pinlar: 7 ta oltin qoplamali differensial pin', '• Protokol: SATA Revision 3.2 / AHCI / TRIM'],
+                explodeOffset: new THREE.Vector3(-0.8, -1.8, 2.2),
+                anchorLocal: new THREE.Vector3(-1.35, 0.12, 4.48),
+                pinOuter: new THREE.Vector3(-2.65, -0.45, 5.75),
+                zoomCam: new THREE.Vector3(-2.1, 1.8, 7.6),
+                zoomTarget: new THREE.Vector3(-1.35, 0.10, 4.42)
+            },
+            {
+                num: 10,
+                id: 'ssd_sata_power',
+                name: 'SATA Power Quvvat Ulagichi',
+                en: '10. SATA POWER CONNECTOR',
+                desc: 'SSD ni +5V doimiy tok bilan ta\'minlovchi 15 ta oltin kontaktli ulagich. Mexanik motor yo\'qligi sababli SSD atigi 2.5 Vatt quvvat sarflaydi.',
+                specs: ['• Quvvat sarfi: Faol rejimda 2.2W / Kutishda 0.05W', '• Kontaktlar: 15 ta zarhal pinli L-ulagich', '• Samaradorlik: HDD ga nisbatan 3 barobar tejamkor'],
+                explodeOffset: new THREE.Vector3(0.8, -1.8, 2.2),
+                anchorLocal: new THREE.Vector3(1.15, 0.12, 4.48),
+                pinOuter: new THREE.Vector3(2.65, -0.45, 5.75),
+                zoomCam: new THREE.Vector3(2.1, 1.8, 7.6),
+                zoomTarget: new THREE.Vector3(1.15, 0.10, 4.42)
+            }
+        ];
+
+        const NVME_PARTS_DATA = [
+            {
+                num: 1,
+                id: 'nvme_nand',
+                name: '3D V-NAND Flash Chiplari (4x)',
+                en: '1. 3D TLC V-NAND PACKAGES (x4)',
+                desc: 'M.2 2280 plata bo\'ylab joylashgan 4 ta yuqori zichlikdagi 236-qatlamli 3D TLC V-NAND BGA xotira paketlari. Har bir chip 8-kanalli parallel ONFI 5.0 shina orqali 2400 MT/s tezlikda ishlaydi.',
+                specs: ['• Sig\'im: 4 x 512GB = 2.0 TB (236-Layer 3D TLC)', '• Paket: Yuqori zichlikdagi BGA-316 kumush sharchali', '• Interfeys: 8-Channel Toggle DDR 5.0 (2400 MT/s)'],
+                explodeOffset: new THREE.Vector3(1.1, 2.6, 0),
+                anchorLocal: new THREE.Vector3(1.85, 0.25, -0.48),
+                pinOuter: new THREE.Vector3(2.55, 0.85, -3.15),
+                zoomCam: new THREE.Vector3(2.2, 3.3, 3.5),
+                zoomTarget: new THREE.Vector3(1.85, 0.20, 0.0)
+            },
+            {
+                num: 2,
+                id: 'nvme_controller',
+                name: 'PCIe 4.0 NVMe Kontroller',
+                en: '2. PCIe 4.0 x4 NVMe SOC CONTROLLER',
+                desc: 'M-Key ulagichga eng yaqin nuqtada joylashgan 5-nm 8-kanalli ARM Cortex-R8 NVMe 2.0 protsessori. Ustki qismi oynadek silliq nikel qoplamali mis issiqlik tarqatgich (IHS) bilan himoyalangan.',
+                specs: ['• Arxitektura: 5nm Dual-CPU + 3x ARM Cortex-R8', '• Tezlik: 7,450 MB/s O\'qish / 6,900 MB/s Yozish', '• Qopqoq: Nikel bilan qoplangan mis IHS qobig\'i'],
+                explodeOffset: new THREE.Vector3(-0.9, 3.5, 0),
+                anchorLocal: new THREE.Vector3(-2.35, 0.28, 0.0),
+                pinOuter: new THREE.Vector3(-2.45, 0.95, -3.15),
+                zoomCam: new THREE.Vector3(-2.35, 3.1, 3.3),
+                zoomTarget: new THREE.Vector3(-2.35, 0.22, 0.0)
+            },
+            {
+                num: 3,
+                id: 'nvme_dram',
+                name: 'LPDDR4X DRAM Kesh Xotira',
+                en: '3. 2GB LPDDR4X-4266 DRAM CACHE',
+                desc: 'NVMe kontroller va NAND chiplar o\'rtasida joylashgan yuqori tezlikdagi 2GB LPDDR4X BGA bufer xotira chipi. 1,400,000 IOPS tasodifiy murojaat tezligini ta\'minlaydi.',
+                specs: ['• Xotira: 2048 MB LPDDR4X-4266 Low-Voltage', '• Tasodifiy tezlik: 1.4M IOPS Read / 1.55M Write', '• Vazifasi: FTL jadvali va tezkor keshlash'],
+                explodeOffset: new THREE.Vector3(-0.2, 3.0, 0.4),
+                anchorLocal: new THREE.Vector3(-0.65, 0.25, 0.28),
+                pinOuter: new THREE.Vector3(-0.45, 0.85, 3.15),
+                zoomCam: new THREE.Vector3(-0.65, 3.0, 3.2),
+                zoomTarget: new THREE.Vector3(-0.65, 0.20, 0.15)
+            },
+            {
+                num: 4,
+                id: 'nvme_pmic',
+                name: 'PMIC Quvvat Chipi va Drossellar',
+                en: '4. PMIC & SHIELDED SMD INDUCTORS',
+                desc: 'Anakartdan keluvchi 3.3V quvvatni kontroller (0.8V), DRAM (1.1V) va NAND (1.8V) uchun taqsimlovchi PMIC mikrochipi, ekranlangan ferrit SMD drossellar (1R0) hamda MLCC kondensatorlar.',
+                specs: ['• Kontroller: PS6108 Ko\'p fazali Buck PMIC', '• Drossellar: 3 ta ekranlangan ferrit induktor (1R0)', '• Himoya: Kuchlanish sakrashidan va qizishdan himoya'],
+                explodeOffset: new THREE.Vector3(-1.1, 2.2, -0.5),
+                anchorLocal: new THREE.Vector3(-3.55, 0.22, -0.52),
+                pinOuter: new THREE.Vector3(-4.15, 0.75, -3.15),
+                zoomCam: new THREE.Vector3(-3.6, 2.9, 2.9),
+                zoomTarget: new THREE.Vector3(-3.55, 0.18, -0.25)
+            },
+            {
+                num: 5,
+                id: 'nvme_mkey',
+                name: 'M.2 M-Key Oltin Kontaktlar',
+                en: '5. M.2 M-KEY GOLD EDGE CONNECTOR',
+                desc: 'M.2 2280 plataning chap uchidagi faskali 24K oltin kontaktli PCIe 4.0 x4 ulagich. Maxsus "M-Key" tirqishi (5 ta pinni ajratib turuvchi kesim) noto\'g\'ri slotga ulanishdan saqlaydi.',
+                specs: ['• Standart: M.2 Socket 3 (M-Key, 67-pin qirra)', '• Shina: 4-Lane PCIe Gen4 x4 (64 Gbit/s)', '• Qoplama: 30-mikron 24K oltin kontakt barmoqlari'],
+                explodeOffset: new THREE.Vector3(-2.1, 0.3, 0),
+                anchorLocal: new THREE.Vector3(-4.82, 0.10, 0.25),
+                pinOuter: new THREE.Vector3(-6.15, 0.35, 1.85),
+                zoomCam: new THREE.Vector3(-6.4, 2.5, 2.8),
+                zoomTarget: new THREE.Vector3(-4.65, 0.10, 0.0)
+            },
+            {
+                num: 6,
+                id: 'nvme_mount',
+                name: 'Yarim Oy Kesimi va M2 Vinti',
+                en: '6. HALF-MOON NOTCH & M2 STANDOFF',
+                desc: 'M.2 2280 plataning o\'ng uchidagi oltin bilan qoplangan yarim oy shaklidagi yerga ulash (Ground) kesimi, anakartning oltiburchak guruch ustuni (Standoff) va xromlangan M2x3mm qotirish vinti.',
+                specs: ['• Standart: 2280 (22mm kenglik x 80mm uzunlik)', '• Yerga ulash: Oltin qoplamali yarim oy halqasi', '• Mahkamlash: M2x3mm vint + guruch Standoff ustuni'],
+                explodeOffset: new THREE.Vector3(2.1, 1.8, 0),
+                anchorLocal: new THREE.Vector3(4.78, 0.25, 0.0),
+                pinOuter: new THREE.Vector3(6.15, 0.45, 1.85),
+                zoomCam: new THREE.Vector3(6.4, 2.6, 2.8),
+                zoomTarget: new THREE.Vector3(4.65, 0.12, 0.0)
+            },
+            {
+                num: 7,
+                id: 'nvme_pcb',
+                name: '10-Qatlamli Qora M.2 2280 PCB',
+                en: '7. 10-LAYER MATTE BLACK M.2 PCB',
+                desc: 'Yuqori chastotali PCIe 4.0 differensial oltin mis yo\'lakchalariga ega 10-qatlamli mat-qora tekstolit plata. Ustida C104, R22, U1 ipakografiya yozuvlari va issiqlik o\'tkazuvchi oltin via teshiklari mavjud.',
+                specs: ['• O\'lchami: 80.0 x 22.0 x 0.8 mm (M.2 2280)', '• Qatlamlar: 10-Layer High-Tg Matte Black FR-4', '• Yo\'laklar: Differensial 100-Ohm PCIe 4.0 izlar'],
+                explodeOffset: new THREE.Vector3(0, 0.3, 0),
+                anchorLocal: new THREE.Vector3(0.25, 0.08, 1.15),
+                pinOuter: new THREE.Vector3(-3.35, 0.25, 3.15),
+                zoomCam: new THREE.Vector3(0.0, 5.2, 4.2),
+                zoomTarget: new THREE.Vector3(0.0, 0.12, 0.0)
+            },
+            {
+                num: 8,
+                id: 'nvme_thermal',
+                name: 'Yuqori O\'tkazuvchan Termal Padlar',
+                en: '8. 14.8 W/mK SILICONE THERMAL PADS',
+                desc: 'NVMe kontroller, DRAM va 4 ta V-NAND chiplari ustiga aniq o\'lchamda yotqizilgan firuza-ko\'k hamda pushti-binafsha rangli yuqori issiqlik o\'tkazuvchi (14.8 W/m·K) silikon termal yostiqchalar.',
+                specs: ['• O\'tkazuvchanlik: 14.8 W/m·K Nano-Silikon', '• Qalinligi: 1.0 mm (NAND) va 0.75 mm (Controller)', '• Vazifasi: Issiqlikni radiatorga bir tekis uzatish'],
+                explodeOffset: new THREE.Vector3(0.4, 4.4, 0),
+                anchorLocal: new THREE.Vector3(1.15, 0.42, 0.55),
+                pinOuter: new THREE.Vector3(2.55, 0.95, 3.15),
+                zoomCam: new THREE.Vector3(1.2, 3.8, 3.8),
+                zoomTarget: new THREE.Vector3(0.5, 0.35, 0.0)
+            },
+            {
+                num: 9,
+                id: 'nvme_heatsink',
+                name: 'CNC Alyuminiy Sovutish Radiatori',
+                en: '9. FINNED CNC M.2 HEATSINK & GRAPHENE',
+                desc: 'Qovurg\'ali havo kanallariga ega anodlangan to\'q-titan va qizil-firuza aksentli CNC alyuminiy radiator hamda mis-grafen folgasi. Yuqori yuklamada SSD haroratini 22°C ga pasaytiradi.',
+                specs: ['• Material: CNC AL-6063 + Mis-Grafen qatlam', '• Konstruksiya: Ko\'ndalang va bo\'ylama sovutish finlari', '• "🛡️ Qopqoq / Radiator" tugmasi bilan yopiladi/ochiladi'],
+                explodeOffset: new THREE.Vector3(0, 6.2, 0),
+                anchorLocal: new THREE.Vector3(0.0, 0.88, -0.85),
+                pinOuter: new THREE.Vector3(5.35, 1.15, -2.55),
+                zoomCam: new THREE.Vector3(0.0, 6.8, 5.8),
+                zoomTarget: new THREE.Vector3(0.0, 0.65, 0.0)
+            },
+            {
+                num: 10,
+                id: 'nvme_backplate',
+                name: 'Ostki Metall Backplate va Pasport',
+                en: '10. BOTTOM BACKPLATE & SERIAL LABEL',
+                desc: 'M.2 2280 platani egilishdan saqlovchi va orqa tomondan sovutuvchi anodlangan metall beshik (Backplate Cradle) hamda "NVME-990PRO-2TB" seriya shtrix-kodi.',
+                specs: ['• Material: Cho\'tkalangan qora zanglamas po\'lat', '• Himoya: PCB egilishi va mexanik shikastdan himoya', '• Yorliq: PCIe 4.0 NVMe 2.0 zavod seriya pasporti'],
+                explodeOffset: new THREE.Vector3(0, -2.2, 0),
+                anchorLocal: new THREE.Vector3(-1.25, -0.22, 1.25),
+                pinOuter: new THREE.Vector3(5.35, -0.35, 2.85),
+                zoomCam: new THREE.Vector3(0.0, 2.8, 5.6),
+                zoomTarget: new THREE.Vector3(0.0, -0.18, 0.0)
+            }
+        ];
+
+        let currentDevice = 'hdd'; // 'hdd', 'ssd' yoki 'nvme'
+        let PARTS_DATA = HDD_PARTS_DATA;
+
+        // ============================================================================
+        // 2. THREE.JS SAHNA, KAMERA VA FOTOREALISTIK HDRI YORITISH TIZIMI
+        // ============================================================================
+        const container = document.getElementById('canvas-container');
+        const svgOverlay = document.getElementById('callout-svg');
+        const pinsContainer = document.getElementById('pins-container');
+
+        const scene = new THREE.Scene();
+
+        const camera = new THREE.PerspectiveCamera(34, window.innerWidth / window.innerHeight, 0.1, 150);
+        const CAM_PRESETS = {
+            iso:   { pos: new THREE.Vector3(0.0, 11.8, 10.2), target: new THREE.Vector3(0.0, 0.15, 0.25) },
+            top:   { pos: new THREE.Vector3(0.0, 15.2, 1.4),  target: new THREE.Vector3(0.0, 0.15, 0.0) },
+            front: { pos: new THREE.Vector3(0.0, 2.4, 11.2),  target: new THREE.Vector3(0.0, 0.0, 3.8) }
+        };
+        camera.position.copy(CAM_PRESETS.iso.pos);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.physicallyCorrectLights = true;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.25;
+        container.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.055;
+        controls.minDistance = 2.0;
+        controls.maxDistance = 32.0;
+        controls.target.copy(CAM_PRESETS.iso.target);
+
+        // Haqiqiy Fotostudiya Softbox HDRI muhiti (Plastinalarda 1-rasmdagi kabi X-simon oyna shu'lasi hosil qiladi)
+        function buildPhotoStudioEnvironment() {
+            const pmrem = new THREE.PMREMGenerator(renderer);
+            pmrem.compileEquirectangularShader();
+            const envScene = new THREE.Scene();
+            envScene.background = new THREE.Color(0x0f172a);
+
+            const addLightBox = (w, h, color, pos, look) => {
+                const m = new THREE.Mesh(
+                    new THREE.PlaneGeometry(w, h),
+                    new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide })
+                );
+                m.position.copy(pos);
+                m.lookAt(look);
+                envScene.add(m);
+            };
+
+            // Yuqori va 4 tomondan diagonal yorug'lik chiziqlari (metall aks qaytarishi uchun)
+            addLightBox(36, 36, 0xffffff, new THREE.Vector3(0, 20, 0), new THREE.Vector3(0, 0, 0));
+            addLightBox(44, 6,  0xf8fafc, new THREE.Vector3(-18, 11, -14), new THREE.Vector3(0, 0, 0));
+            addLightBox(44, 6,  0xe0f2fe, new THREE.Vector3(18, 11, 14),  new THREE.Vector3(0, 0, 0));
+            addLightBox(38, 5,  0xfef3c7, new THREE.Vector3(-16, 8, 16),   new THREE.Vector3(0, 0, 0));
+            addLightBox(38, 5,  0xf1f5f9, new THREE.Vector3(16, 8, -16),  new THREE.Vector3(0, 0, 0));
+
+            const rt = pmrem.fromScene(envScene, 0.02);
+            pmrem.dispose();
+            return rt.texture;
+        }
+        scene.environment = buildPhotoStudioEnvironment();
+
+        // Sahna chiroqlari
+        scene.add(new THREE.AmbientLight(0xffffff, 1.25));
+
+        const keyLight = new THREE.DirectionalLight(0xffffff, 3.6);
+        keyLight.position.set(7, 20, 11);
+        keyLight.castShadow = true;
+        keyLight.shadow.mapSize.set(2048, 2048);
+        keyLight.shadow.camera.near = 2;
+        keyLight.shadow.camera.far = 36;
+        const sd = 7.5;
+        keyLight.shadow.camera.left = -sd;
+        keyLight.shadow.camera.right = sd;
+        keyLight.shadow.camera.top = sd;
+        keyLight.shadow.camera.bottom = -sd;
+        keyLight.shadow.bias = -0.0004;
+        scene.add(keyLight);
+
+        const rimLight1 = new THREE.DirectionalLight(0xbae6fd, 1.8);
+        rimLight1.position.set(-14, 12, -10);
+        scene.add(rimLight1);
+
+        const frontFill = new THREE.DirectionalLight(0xfde68a, 1.5);
+        frontFill.position.set(0, 4, 16);
+        scene.add(frontFill);
+
+        // ============================================================================
+        // 3. YUQORI ANIQLIKDAGI (2048px) PBR PROSEDURAL TEKSTURALAR
+        // ============================================================================
+
+        // 1) Oyna-Plastinalar uchun Anizotropik Xrom Radial Tekstura
+        function makeAnisotropicPlatterTex() {
+            const c = document.createElement('canvas');
+            c.width = 1024;
+            c.height = 1024;
+            const ctx = c.getContext('2d');
+            const cx = 512, cy = 512;
+
+            ctx.fillStyle = '#e5e9f0';
+            ctx.fillRect(0, 0, 1024, 1024);
+
+            // 1-rasmdagi X-simon anizotropik metall shu'lasi
+            for (let a = 0; a < 360; a += 0.4) {
+                const rad = (a * Math.PI) / 180;
+                const wave = Math.sin(rad * 2 - 0.65) * 32 + Math.cos(rad * 4 + 0.3) * 14;
+                const val = Math.min(255, Math.max(180, Math.round(224 + wave)));
+                ctx.strokeStyle = `rgb(${val},${val + 2},${val + 4})`;
+                ctx.lineWidth = 2.5;
+                ctx.beginPath();
+                ctx.moveTo(cx, cy);
+                ctx.lineTo(cx + Math.cos(rad) * 512, cy + Math.sin(rad) * 512);
+                ctx.stroke();
+            }
+
+            // Mikroskopik konsentrik ma'lumot yo'lakchalari
+            for (let r = 135; r < 502; r += 3.5) {
+                ctx.strokeStyle = (r % 56 === 0) ? 'rgba(15, 23, 42, 0.13)' : 'rgba(71, 85, 105, 0.06)';
+                ctx.lineWidth = 0.8;
+                ctx.beginPath();
+                ctx.arc(cx, cy, r, 0, Math.PI * 2);
+                ctx.stroke();
+            }
+
+            const tex = new THREE.CanvasTexture(c);
+            tex.anisotropy = 8;
+            return tex;
+        }
+
+        // 2) 1-rasmdagi O'ng-pastki Zumrad-Yashil PCB Plata Teksturasi (Mis yo'laklar va Oltin Via-lar bilan)
+        function makeRealisticGreenPCBTex() {
+            const c = document.createElement('canvas');
+            c.width = 1024;
+            c.height = 1024;
+            const ctx = c.getContext('2d');
+
+            // Haqiqiy zumrad-yashil solder mask (#0b5d33)
+            ctx.fillStyle = '#0d6338';
+            ctx.fillRect(0, 0, 1024, 1024);
+
+            // Ichki yorqinroq yashil mis shinalar (Copper traces)
+            ctx.strokeStyle = '#19874e';
+            ctx.lineWidth = 3.2;
+            for (let i = 0; i < 160; i++) {
+                const sx = 30 + (i * 47) % 960;
+                const sy = 30 + (i * 67) % 960;
+                ctx.beginPath();
+                ctx.moveTo(sx, sy);
+                ctx.lineTo(sx + 38, sy + 38);
+                ctx.lineTo(sx + 38, sy + 95);
+                ctx.stroke();
+
+                // Oltin va kumush kavshar nuqtalari (Vias & Test pads)
+                ctx.fillStyle = (i % 3 === 0) ? '#fbbf24' : '#e2e8f0';
+                ctx.beginPath();
+                ctx.arc(sx, sy, 6.2, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = '#052e16';
+                ctx.beginPath();
+                ctx.arc(sx, sy, 2.4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            // Oq ipakografiya komponent konturlari
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.72)';
+            ctx.lineWidth = 2;
+            for (let j = 0; j < 36; j++) {
+                const rx = 50 + (j * 97) % 880;
+                const ry = 50 + (j * 83) % 880;
+                ctx.strokeRect(rx, ry, 26, 15);
+            }
+
+            const tex = new THREE.CanvasTexture(c);
+            tex.anisotropy = 8;
+            return tex;
+        }
+
+        // 3) Qora IC Mikrochiplar ustidagi lazerli yozuv teksturasi
+        function makeICPackageTex(brand, model, code) {
+            const c = document.createElement('canvas');
+            c.width = 256;
+            c.height = 256;
+            const ctx = c.getContext('2d');
+
+            ctx.fillStyle = '#14171f';
+            ctx.fillRect(0, 0, 256, 256);
+
+            ctx.strokeStyle = '#272c3a';
+            ctx.lineWidth = 5;
+            ctx.strokeRect(8, 8, 240, 240);
+
+            // Pin-1 lazer nuqtasi
+            ctx.fillStyle = '#94a3b8';
+            ctx.beginPath();
+            ctx.arc(32, 32, 7, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#cbd5e1';
+            ctx.font = 'bold 24px JetBrains Mono, monospace';
+            ctx.fillText(brand, 26, 102);
+
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '18px JetBrains Mono, monospace';
+            ctx.fillText(model, 26, 138);
+            ctx.fillText(code, 26, 170);
+
+            return new THREE.CanvasTexture(c);
+        }
+
+        // 4) 2-rasmdagi "HDD" Bo'rtma Yozuvli Kumush Qopqoq Teksturasi
+        function makeTopCoverHDDTex() {
+            const c = document.createElement('canvas');
+            c.width = 1024;
+            c.height = 1400;
+            const ctx = c.getContext('2d');
+
+            const grad = ctx.createLinearGradient(0, 0, 1024, 1400);
+            grad.addColorStop(0, '#eef2f6');
+            grad.addColorStop(0.5, '#d8e0ea');
+            grad.addColorStop(1, '#b8c4d4');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 1024, 1400);
+
+            // Nozik cho'tkalangan alyuminiy chiziqlari
+            ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+            ctx.lineWidth = 1;
+            for (let x = 0; x < 1024; x += 3) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, 1400);
+                ctx.stroke();
+            }
+
+            // 2-rasmdagi bo'rtma "HDD" yozuvi
+            ctx.save();
+            ctx.font = '900 180px Inter, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#94a3b8';
+            ctx.shadowColor = '#ffffff';
+            ctx.shadowOffsetY = 4;
+            ctx.shadowBlur = 2;
+            ctx.fillText('H D D', 512, 330);
+            ctx.strokeStyle = '#64748b';
+            ctx.lineWidth = 3;
+            ctx.strokeText('H D D', 512, 330);
+            ctx.restore();
+
+            // 2-rasmdagi markaziy botiq halqa (Sunken circular groove)
+            ctx.beginPath();
+            ctx.arc(512, 750, 215, 0, Math.PI * 2);
+            ctx.strokeStyle = '#64748b';
+            ctx.lineWidth = 18;
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(512, 750, 200, 0, Math.PI * 2);
+            ctx.strokeStyle = '#f8fafc';
+            ctx.lineWidth = 8;
+            ctx.stroke();
+
+            const tex = new THREE.CanvasTexture(c);
+            tex.anisotropy = 8;
+            return tex;
+        }
+
+        // 5) 2-rasmdagi Old-O'ng "6RYKG5V1" Shtrix-kod Stikeri
+        function makeBarcodeStickerTex() {
+            const c = document.createElement('canvas');
+            c.width = 512;
+            c.height = 140;
+            const ctx = c.getContext('2d');
+
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, 512, 140);
+
+            ctx.fillStyle = '#090d16';
+            const bars = [4, 2, 6, 2, 3, 5, 2, 2, 6, 3, 2, 4, 2, 5, 3, 2, 6, 2, 3, 4, 2, 5, 2, 3, 6, 2, 4, 2, 3, 5, 2, 4];
+            let x = 28;
+            for (let i = 0; i < bars.length; i++) {
+                const w = bars[i] * 2.3;
+                if (i % 2 === 0) ctx.fillRect(x, 14, w, 78);
+                x += w + 3.2;
+            }
+
+            ctx.font = 'bold 28px JetBrains Mono, monospace';
+            ctx.fillStyle = '#090d16';
+            ctx.textAlign = 'center';
+            ctx.fillText('6RYKG5V1', 256, 125);
+
+            return new THREE.CanvasTexture(c);
+        }
+
+        // 6) SSD Yuqori Zichlikdagi Ko'k-Zumrad 8-Qatlamli PCB Teksturasi (Oltin shinalar bilan)
+        function makeSSDHighDensityPCBTex() {
+            const c = document.createElement('canvas');
+            c.width = 1024;
+            c.height = 1400;
+            const ctx = c.getContext('2d');
+
+            // To'q ko'k-zumrad professional SSD PCB rangi
+            const bgGrad = ctx.createLinearGradient(0, 0, 1024, 1400);
+            bgGrad.addColorStop(0, '#082f49');
+            bgGrad.addColorStop(0.5, '#063946');
+            bgGrad.addColorStop(1, '#042f2e');
+            ctx.fillStyle = bgGrad;
+            ctx.fillRect(0, 0, 1024, 1400);
+
+            // Markaziy yuqori chastotali oltin va firuza ma'lumot magistrallari (Data bus traces)
+            for (let i = 0; i < 42; i++) {
+                const x = 160 + i * 17;
+                ctx.strokeStyle = (i % 5 === 0) ? 'rgba(251, 191, 36, 0.45)' : 'rgba(56, 189, 248, 0.25)';
+                ctx.lineWidth = (i % 5 === 0) ? 3.0 : 1.6;
+                ctx.beginPath();
+                ctx.moveTo(x, 120);
+                ctx.lineTo(x, 1280);
+                ctx.stroke();
+            }
+
+            // Gorizontal NAND kanal shinalari
+            for (let row = 0; row < 16; row++) {
+                const y = 160 + row * 72;
+                ctx.strokeStyle = 'rgba(45, 212, 191, 0.28)';
+                ctx.lineWidth = 2.2;
+                ctx.beginPath();
+                ctx.moveTo(90, y);
+                ctx.lineTo(934, y);
+                ctx.stroke();
+
+                // Oltin BGA via nuqtalari
+                for (let col = 0; col < 12; col++) {
+                    const vx = 120 + col * 72;
+                    ctx.fillStyle = '#fbbf24';
+                    ctx.beginPath();
+                    ctx.arc(vx, y, 4.5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // Oq ipakografiya (Silkscreen) ramkalari va yozuvlari
+            ctx.strokeStyle = 'rgba(248, 250, 252, 0.55)';
+            ctx.lineWidth = 2.5;
+            ctx.strokeRect(48, 48, 928, 1304);
+
+            ctx.fillStyle = 'rgba(248, 250, 252, 0.75)';
+            ctx.font = 'bold 22px JetBrains Mono, monospace';
+            ctx.fillText('PCIe/SATA REV 4.2 HIGH-SPEED NAND ARRAY', 80, 92);
+            ctx.fillText('U1-U8: 3D TLC V-NAND   |   U9: ARM SOC   |   U10: LPDDR4', 80, 1330);
+
+            const tex = new THREE.CanvasTexture(c);
+            tex.anisotropy = 8;
+            return tex;
+        }
+
+        // 7) SSD Ustki Anodlangan Titan-Kumush Qopqoq Teksturasi ("SSD SOLID STATE DRIVE")
+        function makeSSDTopCoverTex() {
+            const c = document.createElement('canvas');
+            c.width = 1024;
+            c.height = 1400;
+            const ctx = c.getContext('2d');
+
+            const grad = ctx.createLinearGradient(0, 0, 1024, 1400);
+            grad.addColorStop(0, '#1e293b');
+            grad.addColorStop(0.5, '#0f172a');
+            grad.addColorStop(1, '#1e293b');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 1024, 1400);
+
+            // Cho'tkalangan metall chiziqlari
+            ctx.strokeStyle = 'rgba(148, 163, 184, 0.08)';
+            ctx.lineWidth = 1.5;
+            for (let x = 0; x < 1024; x += 4) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, 1400);
+                ctx.stroke();
+            }
+
+            // Faskali dekorativ firuza-kumush ramka
+            ctx.strokeStyle = '#38bdf8';
+            ctx.lineWidth = 8;
+            ctx.strokeRect(70, 70, 884, 1260);
+
+            // Diagonal texno aksent chiziqlar
+            ctx.fillStyle = 'rgba(6, 182, 212, 0.14)';
+            ctx.beginPath();
+            ctx.moveTo(70, 70);
+            ctx.lineTo(480, 70);
+            ctx.lineTo(70, 480);
+            ctx.closePath();
+            ctx.fill();
+
+            // Markaziy "SSD" yozuvi
+            ctx.save();
+            ctx.textAlign = 'center';
+            ctx.font = '900 185px Inter, sans-serif';
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillText('S S D', 512, 620);
+
+            ctx.font = '700 38px JetBrains Mono, monospace';
+            ctx.fillStyle = '#38bdf8';
+            ctx.fillText('SOLID STATE DRIVE • 2.0 TB', 512, 710);
+
+            ctx.font = '600 28px JetBrains Mono, monospace';
+            ctx.fillStyle = '#94a3b8';
+            ctx.fillText('3D V-NAND TECHNOLOGY • 6.0 Gbps', 512, 775);
+            ctx.restore();
+
+            const tex = new THREE.CanvasTexture(c);
+            tex.anisotropy = 8;
+            return tex;
+        }
+
+        // 8) M.2 2280 10-Qatlamli Qora Mat PCB Teksturasi (PCIe 4.0 Differensial Oltin Yo'laklar va Silkscreen bilan)
+        function makeNVMeM2PCBTex() {
+            const c = document.createElement('canvas');
+            c.width = 1600;
+            c.height = 512;
+            const ctx = c.getContext('2d');
+
+            // Qora-grafit mat PCB solder mask
+            const grad = ctx.createLinearGradient(0, 0, 1600, 512);
+            grad.addColorStop(0, '#0b0f17');
+            grad.addColorStop(0.5, '#111827');
+            grad.addColorStop(1, '#090d14');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 1600, 512);
+
+            // Yuqori chastotali oltin va mis PCIe 4.0 differensial yo'laklari
+            for (let y = 55; y < 460; y += 16) {
+                ctx.strokeStyle = (y % 48 === 7) ? 'rgba(251, 191, 36, 0.42)' : 'rgba(56, 189, 248, 0.18)';
+                ctx.lineWidth = (y % 48 === 7) ? 2.5 : 1.3;
+                ctx.beginPath();
+                ctx.moveTo(95, y);
+                ctx.lineTo(420, y);
+                ctx.lineTo(460, y + ((y % 32 === 0) ? 12 : -12));
+                ctx.lineTo(1480, y);
+                ctx.stroke();
+            }
+
+            // Oltin SMD Via nuqtalari va termal via panjarasi
+            for (let gx = 150; gx < 1460; gx += 46) {
+                for (let gy = 52; gy < 465; gy += 46) {
+                    ctx.fillStyle = '#fbbf24';
+                    ctx.beginPath();
+                    ctx.arc(gx, gy, 3.2, 0, Math.PI * 2);
+                    ctx.fill();
+                    ctx.fillStyle = '#090d14';
+                    ctx.beginPath();
+                    ctx.arc(gx, gy, 1.3, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // Oq ipakografiya (Silkscreen) yozuvlari va komponent konturlari
+            ctx.strokeStyle = 'rgba(248, 250, 252, 0.65)';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(110, 28, 1380, 456);
+
+            ctx.fillStyle = 'rgba(248, 250, 252, 0.85)';
+            ctx.font = 'bold 20px JetBrains Mono, monospace';
+            ctx.fillText('M.2 2280 PCIe Gen4 x4 NVMe 2.0 REV 1.4', 145, 58);
+            ctx.fillText('U1: PHISON E18', 310, 470);
+            ctx.fillText('U2: LPDDR4X', 610, 470);
+            ctx.fillText('NAND1..4: 3D V-NAND TLC ARRAY', 860, 470);
+            ctx.fillText('2280', 1415, 262);
+
+            const tex = new THREE.CanvasTexture(c);
+            tex.anisotropy = 8;
+            return tex;
+        }
+
+        // 9) M.2 NVMe CNC Radiator va Grafen Yorliq Teksturasi
+        function makeNVMeHeatsinkTopTex() {
+            const c = document.createElement('canvas');
+            c.width = 1600;
+            c.height = 512;
+            const ctx = c.getContext('2d');
+
+            const grad = ctx.createLinearGradient(0, 0, 1600, 512);
+            grad.addColorStop(0, '#0f172a');
+            grad.addColorStop(0.5, '#1e293b');
+            grad.addColorStop(1, '#090d16');
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, 1600, 512);
+
+            // Qizil-pushti va firuza texno chiziqlar
+            ctx.strokeStyle = '#ec4899';
+            ctx.lineWidth = 8;
+            ctx.strokeRect(36, 36, 1528, 440);
+
+            ctx.fillStyle = 'rgba(56, 189, 248, 0.16)';
+            ctx.beginPath();
+            ctx.moveTo(36, 36);
+            ctx.lineTo(420, 36);
+            ctx.lineTo(280, 476);
+            ctx.lineTo(36, 476);
+            ctx.closePath();
+            ctx.fill();
+
+            ctx.save();
+            ctx.textAlign = 'center';
+            ctx.font = '900 92px Inter, sans-serif';
+            ctx.fillStyle = '#f8fafc';
+            ctx.fillText('M.2 NVMe PRO • 2TB', 820, 245);
+
+            ctx.font = '700 36px JetBrains Mono, monospace';
+            ctx.fillStyle = '#38bdf8';
+            ctx.fillText('PCIe 4.0 x4  |  7,450 MB/s READ  |  GRAPHENE ARMOR', 820, 330);
+            ctx.restore();
+
+            const tex = new THREE.CanvasTexture(c);
+            tex.anisotropy = 8;
+            return tex;
+        }
+
+        // ============================================================================
+        // 4. FIZIK TO'G'RI PBR MATERIALLAR VA DETALLI TORX VINT GENERATORI
+        // ============================================================================
+        const MAT = {
+            matteBlackChassis: new THREE.MeshStandardMaterial({
+                color: 0x15181f,
+                metalness: 0.52,
+                roughness: 0.44
+            }),
+            cncInnerAluminum: new THREE.MeshStandardMaterial({
+                color: 0xd0d7e2,
+                metalness: 0.86,
+                roughness: 0.24
+            }),
+            brushedSilver: new THREE.MeshStandardMaterial({
+                color: 0xe2e8f0,
+                metalness: 0.91,
+                roughness: 0.17
+            }),
+            mirrorChrome: new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                metalness: 0.99,
+                roughness: 0.02
+            }),
+            anodizedBlue: new THREE.MeshStandardMaterial({
+                color: 0x38bdf8,
+                metalness: 0.88,
+                roughness: 0.15
+            }),
+            kaptonCopper: new THREE.MeshStandardMaterial({
+                color: 0xc86d24,
+                metalness: 0.78,
+                roughness: 0.22,
+                side: THREE.DoubleSide
+            }),
+            gold24k: new THREE.MeshStandardMaterial({
+                color: 0xfbbf24,
+                metalness: 0.96,
+                roughness: 0.12
+            }),
+            vividOrangeRamp: new THREE.MeshStandardMaterial({
+                color: 0xf97316,
+                metalness: 0.06,
+                roughness: 0.30
+            }),
+            goretexWhite: new THREE.MeshStandardMaterial({
+                color: 0xf8fafc,
+                metalness: 0.02,
+                roughness: 0.85
+            }),
+            ebonyPlastic: new THREE.MeshStandardMaterial({
+                color: 0x0b0e14,
+                metalness: 0.18,
+                roughness: 0.38
+            }),
+            tanCapacitor: new THREE.MeshStandardMaterial({
+                color: 0xb4834e,
+                metalness: 0.15,
+                roughness: 0.4
+            })
+        };
+
+        // Yuqori aniqlikdagi Torx / Hex murvat boshi
+        function createTorxScrew(radius = 0.15, height = 0.10, withFlange = true) {
+            const g = new THREE.Group();
+            if (withFlange) {
+                const flange = new THREE.Mesh(
+                    new THREE.CylinderGeometry(radius * 1.28, radius * 1.28, height * 0.24, 32),
+                    MAT.brushedSilver
+                );
+                g.add(flange);
+            }
+            const head = new THREE.Mesh(
+                new THREE.CylinderGeometry(radius, radius, height, 32),
+                MAT.mirrorChrome
+            );
+            head.position.y = height * 0.5;
+            g.add(head);
+
+            const starSocket = new THREE.Mesh(
+                new THREE.CylinderGeometry(radius * 0.52, radius * 0.52, height * 0.25, 6),
+                new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.8, roughness: 0.3 })
+            );
+            starSocket.position.y = height * 0.92;
+            g.add(starSocket);
+            return g;
+        }
+
+        // ============================================================================
+        // 5. 1:1 CAD GEOMETRIYASI — BARCHA 10 TA QISMNI YASASH
+        // ============================================================================
+        const hddModel = new THREE.Group();
+        scene.add(hddModel);
+
+        const ssdModel = new THREE.Group();
+        ssdModel.visible = false;
+        scene.add(ssdModel);
+
+        const nvmeModel = new THREE.Group();
+        nvmeModel.visible = false;
+        scene.add(nvmeModel);
+
+        const hddPartGroups = {};
+        const ssdPartGroups = {};
+        const nvmePartGroups = {};
+        let partGroups = hddPartGroups;
+
+        const hddClickableMeshes = [];
+        const ssdClickableMeshes = [];
+        const nvmeClickableMeshes = [];
+        let clickableMeshes = hddClickableMeshes;
+
+        function initPartGroup(id, targetDevice = 'hdd') {
+            const g = new THREE.Group();
+            g.name = id;
+            g.userData = { partId: id, basePos: new THREE.Vector3(0, 0, 0), device: targetDevice };
+            if (targetDevice === 'hdd') {
+                hddModel.add(g);
+                hddPartGroups[id] = g;
+            } else if (targetDevice === 'ssd') {
+                ssdModel.add(g);
+                ssdPartGroups[id] = g;
+            } else {
+                nvmeModel.add(g);
+                nvmePartGroups[id] = g;
+            }
+            return g;
+        }
+
+        function bindClickable(grp, partId, targetDevice = 'hdd') {
+            grp.traverse((child) => {
+                if (child.isMesh) {
+                    child.userData.partId = partId;
+                    child.userData.device = targetDevice;
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                    if (child.material) {
+                        child.material = child.material.clone();
+                        child.userData.origEmissive = child.material.emissive ? child.material.emissive.clone() : new THREE.Color(0x000000);
+                    }
+                    if (targetDevice === 'hdd') {
+                        hddClickableMeshes.push(child);
+                    } else if (targetDevice === 'ssd') {
+                        ssdClickableMeshes.push(child);
+                    } else {
+                        nvmeClickableMeshes.push(child);
+                    }
+                }
+            });
+        }
+
+        // Asosiy mexanik markaz koordinatalari (1-rasmga 1:1 proporsiyada)
+        const SPINDLE_POS = new THREE.Vector3(0.0, 0.14, -1.15);
+        const PIVOT_POS   = new THREE.Vector3(-1.38, 0.14, 1.88);
+
+        // ----------------------------------------------------------------------------
+        // QUYMA ALYUMINIY SHASSI KORPUSI (Qora tashqi devor + CNC kumush ichki vanna)
+        // ----------------------------------------------------------------------------
+        const chassisGroup = new THREE.Group();
+        hddModel.add(chassisGroup);
+        {
+            // Qora korpus asosi
+            const baseSlab = new THREE.Mesh(new THREE.BoxGeometry(7.5, 0.34, 10.3), MAT.matteBlackChassis);
+            baseSlab.position.set(0, -0.34, 0);
+            chassisGroup.add(baseSlab);
+
+            // Chap, O'ng va Orqa qora devorlar
+            const wallL = new THREE.Mesh(new THREE.BoxGeometry(0.42, 1.26, 10.3), MAT.matteBlackChassis);
+            wallL.position.set(-3.54, 0.26, 0);
+            chassisGroup.add(wallL);
+
+            const wallR = new THREE.Mesh(new THREE.BoxGeometry(0.42, 1.26, 10.3), MAT.matteBlackChassis);
+            wallR.position.set(3.54, 0.26, 0);
+            chassisGroup.add(wallR);
+
+            const wallBack = new THREE.Mesh(new THREE.BoxGeometry(6.66, 1.26, 0.44), MAT.matteBlackChassis);
+            wallBack.position.set(0, 0.26, -4.93);
+            chassisGroup.add(wallBack);
+
+            // Old devor ustki to'zoni va o'rta ajratgichi (SATA portlar ustida)
+            const frontTopBar = new THREE.Mesh(new THREE.BoxGeometry(6.66, 0.62, 0.44), MAT.matteBlackChassis);
+            frontTopBar.position.set(0, 0.58, 4.93);
+            chassisGroup.add(frontTopBar);
+
+            const frontCenterPillar = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.65, 0.44), MAT.matteBlackChassis);
+            frontCenterPillar.position.set(-0.28, -0.05, 4.93);
+            chassisGroup.add(frontCenterPillar);
+
+            // 2-rasmdagi "6RYKG5V1" Shtrix-kod Stikeri (Old-o'ng qora korpus qirrasida)
+            const barcodeMesh = new THREE.Mesh(
+                new THREE.PlaneGeometry(2.35, 0.50),
+                new THREE.MeshBasicMaterial({ map: makeBarcodeStickerTex() })
+            );
+            barcodeMesh.position.set(1.88, 0.55, 5.16);
+            chassisGroup.add(barcodeMesh);
+
+            // Plastina ostidagi CNC kumush silindrik vanna (Platter Tub Floor & Curved Shroud)
+            const platterTubFloor = new THREE.Mesh(
+                new THREE.CylinderGeometry(3.16, 3.16, 0.12, 96),
+                MAT.cncInnerAluminum
+            );
+            platterTubFloor.position.set(SPINDLE_POS.x, -0.10, SPINDLE_POS.z);
+            chassisGroup.add(platterTubFloor);
+
+            const platterShroudWall = new THREE.Mesh(
+                new THREE.CylinderGeometry(3.22, 3.22, 0.98, 96, 1, true, -0.32, Math.PI * 1.36),
+                new THREE.MeshStandardMaterial({ color: 0x262c38, metalness: 0.72, roughness: 0.28, side: THREE.DoubleSide })
+            );
+            platterShroudWall.position.set(SPINDLE_POS.x, 0.32, SPINDLE_POS.z);
+            chassisGroup.add(platterShroudWall);
+
+            // 1-rasmdagi kabi korpus burchaklaridagi kumush CNC mahkamlash ustunlari va Torx vintlari
+            const cornerBosses = [
+                [-3.26, -4.65], [3.26, -4.65],
+                [-3.26, -0.05], [3.26, -1.62],
+                [-3.26, 4.58],  [3.26, 4.58]
+            ];
+            cornerBosses.forEach(([bx, bz]) => {
+                const boss = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.30, 1.14, 32), MAT.cncInnerAluminum);
+                boss.position.set(bx, 0.30, bz);
+                chassisGroup.add(boss);
+
+                const screw = createTorxScrew(0.14, 0.08, true);
+                screw.position.set(bx, 0.87, bz);
+                chassisGroup.add(screw);
+            });
+        }
+
+        // ----------------------------------------------------------------------------
+        // #1. PLATTERS (4 Qavat Oyna kabi Yaltiroq Magnit Plastinalar + CNC Halqalar)
+        // ----------------------------------------------------------------------------
+        const plattersGroup = initPartGroup('platters');
+        const plattersSpinGroup = new THREE.Group();
+        plattersSpinGroup.position.copy(SPINDLE_POS);
+        plattersGroup.add(plattersSpinGroup);
+
+        const individualPlatters = [];
+        {
+            const platterSurfaceTex = makeAnisotropicPlatterTex();
+            const mirrorPlatterMat = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                map: platterSurfaceTex,
+                metalness: 1.0,
+                roughness: 0.015,
+                envMapIntensity: 2.5
+            });
+
+            // 1-rasmdagi kabi yon qirrasida 4 ta alohida oyna-disk qavati
+            const layerHeights = [0.06, 0.23, 0.40, 0.57];
+            layerHeights.forEach((ly, idx) => {
+                const pLayer = new THREE.Group();
+                pLayer.position.y = ly;
+                pLayer.userData = { baseY: ly, index: idx };
+
+                // 128 segmentli ideal silliq disk
+                const diskMesh = new THREE.Mesh(new THREE.CylinderGeometry(3.02, 3.02, 0.058, 128), mirrorPlatterMat);
+                pLayer.add(diskMesh);
+
+                // Yaltiroq xrom qirra faskasi
+                const rimBevel = new THREE.Mesh(new THREE.TorusGeometry(3.02, 0.025, 16, 128), MAT.mirrorChrome);
+                rimBevel.rotation.x = Math.PI / 2;
+                pLayer.add(rimBevel);
+
+                // Qavatlar orasidagi qora-kulrang soya ajratgich (yonidan 4 qavat aniq ajralib turishi uchun)
+                if (idx < 3) {
+                    const spacerRing = new THREE.Mesh(
+                        new THREE.CylinderGeometry(2.96, 2.96, 0.11, 64),
+                        new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.85, roughness: 0.35 })
+                    );
+                    spacerRing.position.y = 0.085;
+                    pLayer.add(spacerRing);
+                }
+
+                plattersSpinGroup.add(pLayer);
+                individualPlatters.push(pLayer);
+            });
+        }
+        bindClickable(plattersGroup, 'platters');
+
+        // ----------------------------------------------------------------------------
+        // #2. SPINDLE MOTOR (6 ta Torx Vintli Pog'onali Vtulka + Ko'k Markaziy Halqa)
+        // ----------------------------------------------------------------------------
+        const spindleGroup = initPartGroup('spindle_motor');
+        const spindleSpinGroup = new THREE.Group();
+        spindleSpinGroup.position.copy(SPINDLE_POS);
+        spindleGroup.add(spindleSpinGroup);
+        {
+            // Parchalanganda pastda ko'rinadigan 12-qutbli mis chulg'amli Stator
+            const statorPlate = new THREE.Mesh(new THREE.CylinderGeometry(1.18, 1.18, 0.10, 64), MAT.cncInnerAluminum);
+            statorPlate.position.set(SPINDLE_POS.x, -0.02, SPINDLE_POS.z);
+            spindleGroup.add(statorPlate);
+
+            for (let i = 0; i < 12; i++) {
+                const a = (i / 12) * Math.PI * 2;
+                const coil = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.22, 24), MAT.kaptonCopper);
+                coil.position.set(SPINDLE_POS.x + Math.cos(a) * 0.82, 0.08, SPINDLE_POS.z + Math.sin(a) * 0.82);
+                spindleGroup.add(coil);
+            }
+
+            // 1-rasmdagi pog'onali (tiered) kumush shpindel qisqich barabani
+            const baseFlange = new THREE.Mesh(new THREE.CylinderGeometry(1.02, 1.05, 0.22, 96), MAT.mirrorChrome);
+            baseFlange.position.y = 0.60;
+            spindleSpinGroup.add(baseFlange);
+
+            const upperCrown = new THREE.Mesh(new THREE.CylinderGeometry(0.92, 0.96, 0.18, 96), MAT.brushedSilver);
+            upperCrown.position.y = 0.75;
+            spindleSpinGroup.add(upperCrown);
+
+            // Tashqi xrom halqa qirrasi
+            const topLip = new THREE.Mesh(new THREE.TorusGeometry(0.92, 0.03, 16, 96), MAT.mirrorChrome);
+            topLip.rotation.x = Math.PI / 2;
+            topLip.position.y = 0.84;
+            spindleSpinGroup.add(topLip);
+
+            // Markaziy botiq chuqurcha va 1-rasmdagi firuza-ko'k (anodized blue) o'q halqasi
+            const centerWell = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.30, 0.19, 48), MAT.matteBlackChassis);
+            centerWell.position.y = 0.76;
+            spindleSpinGroup.add(centerWell);
+
+            const blueShaftRing = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.21, 36), MAT.anodizedBlue);
+            blueShaftRing.position.y = 0.77;
+            spindleSpinGroup.add(blueShaftRing);
+
+            // 1-rasmdagi 6 ta Torx T6 vintlari va ularning chuqurchalari
+            for (let i = 0; i < 6; i++) {
+                const ang = (i / 6) * Math.PI * 2 + 0.26;
+                const sx = Math.cos(ang) * 0.58;
+                const sz = Math.sin(ang) * 0.58;
+
+                const pocket = new THREE.Mesh(new THREE.CylinderGeometry(0.115, 0.115, 0.19, 24), MAT.matteBlackChassis);
+                pocket.position.set(sx, 0.76, sz);
+                spindleSpinGroup.add(pocket);
+
+                const torx = createTorxScrew(0.088, 0.06, false);
+                torx.position.set(sx, 0.82, sz);
+                spindleSpinGroup.add(torx);
+            }
+        }
+        bindClickable(spindleGroup, 'spindle_motor');
+
+        // ----------------------------------------------------------------------------
+        // #3. ACTUATOR ARM (1-rasmdagi 3 Teshikli Uchburchak Qo'l + VCM + Mis O'ram)
+        // ----------------------------------------------------------------------------
+        const actuatorGroup = initPartGroup('actuator_arm');
+        const actuatorPivotNode = new THREE.Group();
+        actuatorPivotNode.position.copy(PIVOT_POS);
+        actuatorGroup.add(actuatorPivotNode);
+        {
+            // 1. Chap-pastki burchakdagi yoysimon kumush VCM magnit plitasi (1-rasmga 1:1 mos)
+            const vcmShape = new THREE.Shape();
+            vcmShape.moveTo(-1.88, 1.42);
+            vcmShape.lineTo(-0.52, 1.62);
+            vcmShape.quadraticCurveTo(-0.32, 0.42, -0.78, -1.02);
+            vcmShape.lineTo(-1.80, -0.82);
+            vcmShape.quadraticCurveTo(-1.48, 0.35, -1.88, 1.42);
+
+            const vcmGeo = new THREE.ExtrudeGeometry(vcmShape, {
+                depth: 0.15,
+                bevelEnabled: true,
+                bevelThickness: 0.03,
+                bevelSize: 0.03,
+                bevelSegments: 4,
+                curveSegments: 48
+            });
+            vcmGeo.rotateX(Math.PI / 2);
+            const vcmYoke = new THREE.Mesh(vcmGeo, MAT.brushedSilver);
+            vcmYoke.position.set(PIVOT_POS.x, 0.78, PIVOT_POS.z + 0.12);
+            actuatorGroup.add(vcmYoke);
+
+            // VCM plitasi ustidagi 3 ta mahkamlash murvatlari va teshiklari
+            const vcmScrews = [
+                [PIVOT_POS.x - 1.38, PIVOT_POS.z - 0.62],
+                [PIVOT_POS.x - 1.18, PIVOT_POS.z + 1.18],
+                [PIVOT_POS.x - 0.74, PIVOT_POS.z + 0.88]
+            ];
+            vcmScrews.forEach(([vx, vz]) => {
+                const bolt = createTorxScrew(0.115, 0.08, true);
+                bolt.position.set(vx, 0.79, vz);
+                actuatorGroup.add(bolt);
+            });
+
+            // 2. 1-rasmda aktuator va yashil PCB o'rtasida yaqqol ko'rinib turgan Silindrik Mis Kapton Shleyf O'rami
+            const flexRollOuter = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.48, 0.48, 0.54, 48, 1, true),
+                MAT.kaptonCopper
+            );
+            flexRollOuter.position.set(PIVOT_POS.x + 1.14, 0.39, PIVOT_POS.z + 0.36);
+            actuatorGroup.add(flexRollOuter);
+
+            const flexRollInner = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.39, 0.39, 0.54, 48, 1, true),
+                MAT.kaptonCopper
+            );
+            flexRollInner.position.set(PIVOT_POS.x + 1.14, 0.39, PIVOT_POS.z + 0.36);
+            actuatorGroup.add(flexRollInner);
+
+            // O'ram ustidagi gorizontal mis yo'lak chiziqlari
+            for (let r = 0; r < 4; r++) {
+                const traceRing = new THREE.Mesh(
+                    new THREE.TorusGeometry(0.482, 0.008, 8, 48),
+                    MAT.gold24k
+                );
+                traceRing.rotation.x = Math.PI / 2;
+                traceRing.position.set(PIVOT_POS.x + 1.14, 0.24 + r * 0.10, PIVOT_POS.z + 0.36);
+                actuatorGroup.add(traceRing);
+            }
+
+            // 3. Aylanuvchi Podshipnik Barabani (Pivot Bearing Hub)
+            const bearingDrum = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.50, 0.70, 64), MAT.brushedSilver);
+            bearingDrum.position.y = 0.43;
+            actuatorPivotNode.add(bearingDrum);
+
+            const bearingCap = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.74, 48), MAT.mirrorChrome);
+            bearingCap.position.y = 0.44;
+            actuatorPivotNode.add(bearingCap);
+
+            const capScrew = createTorxScrew(0.12, 0.07, false);
+            capScrew.position.y = 0.81;
+            actuatorPivotNode.add(capScrew);
+
+            // 4. 1-rasmdagi 3 ta Dumaloq Teshikli Uchburchak Aktuator Qo'llari (4 qavat)
+            const armBladeShape = new THREE.Shape();
+            armBladeShape.moveTo(0, -0.38);
+            armBladeShape.lineTo(2.22, -0.115);
+            armBladeShape.lineTo(2.22, 0.115);
+            armBladeShape.lineTo(0, 0.38);
+            armBladeShape.closePath();
+
+            // 3 ta kamayib boruvchi dumaloq teshiklar (Weight-relief holes)
+            [
+                { x: 0.74, r: 0.165 },
+                { x: 1.26, r: 0.130 },
+                { x: 1.70, r: 0.095 }
+            ].forEach(h => {
+                const hole = new THREE.Path();
+                hole.absarc(h.x, 0, h.r, 0, Math.PI * 2, false);
+                armBladeShape.holes.push(hole);
+            });
+
+            const armBladeGeo = new THREE.ExtrudeGeometry(armBladeShape, {
+                depth: 0.048,
+                bevelEnabled: true,
+                bevelThickness: 0.008,
+                bevelSize: 0.008,
+                bevelSegments: 2,
+                curveSegments: 36
+            });
+            armBladeGeo.rotateX(Math.PI / 2);
+
+            const armOrientGroup = new THREE.Group();
+            armOrientGroup.rotation.y = 0.68;
+            actuatorPivotNode.add(armOrientGroup);
+
+            [0.14, 0.31, 0.48, 0.66].forEach((ay) => {
+                const blade = new THREE.Mesh(armBladeGeo, MAT.brushedSilver);
+                blade.position.y = ay;
+                armOrientGroup.add(blade);
+            });
+
+            // Qo'lning yon devoridagi mis-oltin Preamplifier shleyfi
+            const armSideFlex = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.50, 0.035), MAT.kaptonCopper);
+            armSideFlex.position.set(0.98, 0.40, 0.26);
+            armSideFlex.rotation.y = -0.11;
+            armOrientGroup.add(armSideFlex);
+        }
+        bindClickable(actuatorGroup, 'actuator_arm');
+
+        // ----------------------------------------------------------------------------
+        // #4. READ/WRITE HEAD (Ingichka Po'lat Osma Uchi va TMR Magnit Kallaklar)
+        // ----------------------------------------------------------------------------
+        const rwHeadGroup = initPartGroup('rw_head');
+        const headPivotNode = new THREE.Group();
+        headPivotNode.position.copy(PIVOT_POS);
+        rwHeadGroup.add(headPivotNode);
+        {
+            const headOrient = new THREE.Group();
+            headOrient.rotation.y = 0.68;
+            headPivotNode.add(headOrient);
+
+            const tangShape = new THREE.Shape();
+            tangShape.moveTo(2.18, -0.095);
+            tangShape.lineTo(3.12, -0.024);
+            tangShape.lineTo(3.12, 0.024);
+            tangShape.lineTo(2.18, 0.095);
+            tangShape.closePath();
+
+            const tangHole = new THREE.Path();
+            tangHole.absarc(2.48, 0, 0.042, 0, Math.PI * 2, false);
+            tangShape.holes.push(tangHole);
+
+            const tangGeo = new THREE.ExtrudeGeometry(tangShape, { depth: 0.022, bevelEnabled: false });
+            tangGeo.rotateX(Math.PI / 2);
+
+            [0.13, 0.30, 0.47, 0.65].forEach((hy) => {
+                const suspension = new THREE.Mesh(tangGeo, MAT.mirrorChrome);
+                suspension.position.y = hy;
+                headOrient.add(suspension);
+
+                // Oltin mikro-signal simi
+                const goldWire = new THREE.Mesh(new THREE.BoxGeometry(0.90, 0.026, 0.018), MAT.gold24k);
+                goldWire.position.set(2.64, hy, 0);
+                headOrient.add(goldWire);
+
+                // Qora-qizg'ish TMR nano-slayder kallak uchi
+                const sliderHead = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.12, 0.046, 0.075),
+                    new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.7, roughness: 0.2 })
+                );
+                sliderHead.position.set(3.04, hy - 0.016, 0);
+                headOrient.add(sliderHead);
+            });
+        }
+        bindClickable(rwHeadGroup, 'rw_head');
+
+        // ----------------------------------------------------------------------------
+        // #6. AIR FILTER (1-rasmdagi Yuqori-O'ng Burchakdagi Oq Resirkulyatsiya Filtri)
+        // ----------------------------------------------------------------------------
+        const filterGroup = initPartGroup('air_filter');
+        {
+            // Diagonal plastik/metall ushlagich tirqishlari
+            const holderBox = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.66, 1.42), MAT.matteBlackChassis);
+            holderBox.position.set(2.76, 0.36, -3.12);
+            holderBox.rotation.y = -0.36;
+            filterGroup.add(holderBox);
+
+            // Yoysimon oq Gore-Tex mikro-filtr yostiqchasi (1-rasmga 1:1 mos)
+            const whiteElement = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.72, 1.22), MAT.goretexWhite);
+            whiteElement.position.set(2.76, 0.42, -3.12);
+            whiteElement.rotation.y = -0.36;
+            filterGroup.add(whiteElement);
+
+            const roundedEnd = new THREE.Mesh(new THREE.CylinderGeometry(0.38, 0.38, 0.72, 32), MAT.goretexWhite);
+            roundedEnd.position.set(2.56, 0.42, -3.60);
+            filterGroup.add(roundedEnd);
+        }
+        bindClickable(filterGroup, 'air_filter');
+
+        // ----------------------------------------------------------------------------
+        // #7. PARKING RAMP (1-rasmdagi Yorqin To'q Sariq Taroqsimon Rampa va Vinti)
+        // ----------------------------------------------------------------------------
+        const rampGroup = initPartGroup('parking_ramp');
+        {
+            const rampBody = new THREE.Mesh(new THREE.BoxGeometry(0.82, 0.74, 1.08), MAT.vividOrangeRamp);
+            rampBody.position.set(2.74, 0.39, 0.48);
+            rampBody.rotation.y = -0.20;
+            rampGroup.add(rampBody);
+
+            // Plastina qirrasi kirib turadigan 4 ta tirqish
+            const slotMat = new THREE.MeshStandardMaterial({ color: 0x9a3412, roughness: 0.45 });
+            [0.14, 0.31, 0.48, 0.65].forEach((sy) => {
+                const slot = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.055, 0.54), slotMat);
+                slot.position.set(2.60, sy, 0.34);
+                slot.rotation.y = -0.20;
+                rampGroup.add(slot);
+            });
+
+            // Rampa ustidagi silindrik ustuncha va kumush Torx vinti
+            const screwCollar = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.78, 28), MAT.vividOrangeRamp);
+            screwCollar.position.set(2.82, 0.40, 0.58);
+            rampGroup.add(screwCollar);
+
+            const rampScrew = createTorxScrew(0.11, 0.07, false);
+            rampScrew.position.set(2.82, 0.79, 0.58);
+            rampGroup.add(rampScrew);
+        }
+        bindClickable(rampGroup, 'parking_ramp');
+
+        // ----------------------------------------------------------------------------
+        // #8. CONTROLLER PCB (1-rasmdagi O'ng-Pastki Zumrad-Yashil Plata va 3 ta IC Chip)
+        // ----------------------------------------------------------------------------
+        const pcbGroup = initPartGroup('controller_pcb');
+        {
+            const greenPCBTex = makeRealisticGreenPCBTex();
+            const pcbBoardMat = new THREE.MeshStandardMaterial({
+                color: 0x15803d,
+                map: greenPCBTex,
+                metalness: 0.30,
+                roughness: 0.34
+            });
+
+            // 1. 1-rasmda o'ng-pastki bo'lmada ko'rinib turuvchi Yashil PCB Plata
+            const topBayPCB = new THREE.Mesh(new THREE.BoxGeometry(3.62, 0.15, 2.62), pcbBoardMat);
+            topBayPCB.position.set(1.30, 0.12, 2.82);
+            pcbGroup.add(topBayPCB);
+
+            // Korpus tagidagi asosiy plata (Explode qilinganda to'liq ko'rinadi)
+            const underBoardPCB = new THREE.Mesh(new THREE.BoxGeometry(6.85, 0.12, 9.5), pcbBoardMat);
+            underBoardPCB.position.set(0, -0.56, 0.15);
+            pcbGroup.add(underBoardPCB);
+
+            // QFP/BGA Mikrosxemani kumush oyoqchalari (Gull-wing pins) bilan yasash funksiyasi
+            function createDetailedICChip(w, d, tex, posX, posZ) {
+                const chipGrp = new THREE.Group();
+                chipGrp.position.set(posX, 0.23, posZ);
+
+                const body = new THREE.Mesh(
+                    new THREE.BoxGeometry(w, 0.12, d),
+                    new THREE.MeshStandardMaterial({ map: tex, roughness: 0.28, metalness: 0.22 })
+                );
+                chipGrp.add(body);
+
+                // 4 tomondan kumush mikro-oyoqchalar qatori
+                const pinCount = 9;
+                for (let i = 0; i < pinCount; i++) {
+                    const offset = -0.32 + (i / (pinCount - 1)) * 0.64;
+                    const pinX = new THREE.Mesh(new THREE.BoxGeometry(w + 0.12, 0.03, 0.03), MAT.brushedSilver);
+                    pinX.position.set(0, -0.03, offset * d);
+                    chipGrp.add(pinX);
+
+                    const pinZ = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.03, d + 0.12), MAT.brushedSilver);
+                    pinZ.position.set(offset * w, -0.03, 0);
+                    chipGrp.add(pinZ);
+                }
+                return chipGrp;
+            }
+
+            // 1-rasmdagi 3 ta Qora Kvadrat IC Mikrosxemalar:
+            // 1) Yuqori o'rtadagi VCM Motor Driver IC
+            pcbGroup.add(createDetailedICChip(0.78, 0.74, makeICPackageTex('SMOOTH', 'L7251 3.1', 'VCM DRV'), 1.24, 2.08));
+            // 2) Chap-pastki yirik Main SoC Controller
+            pcbGroup.add(createDetailedICChip(0.96, 0.92, makeICPackageTex('MARVELL', '88i1054', 'ARM SOC'), 0.90, 3.22));
+            // 3) O'ng-pastki DRAM Cache Memory IC
+            pcbGroup.add(createDetailedICChip(0.76, 0.96, makeICPackageTex('SAMSUNG', 'DDR4 256M', 'K4A8G16'), 2.18, 3.25));
+
+            // SMD Keramik Kondensatorlar va Rezistorlar (Tan & Silver)
+            const smdList = [
+                [0.12, 2.75], [0.12, 3.05], [0.12, 3.35], [0.42, 2.25],
+                [1.92, 2.05], [2.48, 2.28], [2.72, 2.88], [2.72, 3.18],
+                [1.56, 3.85], [0.45, 3.82], [-0.15, 3.15]
+            ];
+            smdList.forEach(([sx, sz], idx) => {
+                const smd = new THREE.Group();
+                smd.position.set(sx, 0.21, sz);
+                const capBody = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.07, 0.09), MAT.tanCapacitor);
+                const endL = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.072, 0.092), MAT.brushedSilver);
+                endL.position.x = -0.07;
+                const endR = endL.clone();
+                endR.position.x = 0.07;
+                smd.add(capBody, endL, endR);
+                if (idx % 2 === 1) smd.rotation.y = Math.PI / 2;
+                pcbGroup.add(smd);
+            });
+
+            // PCB burchaklaridagi oltin halqali Torx mahkamlash vintlari
+            [
+                [2.85, 1.98], [2.85, 3.86], [-0.26, 3.76]
+            ].forEach(([px, pz]) => {
+                const goldPad = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.02, 24), MAT.gold24k);
+                goldPad.position.set(px, 0.20, pz);
+                pcbGroup.add(goldPad);
+
+                const screw = createTorxScrew(0.10, 0.06, false);
+                screw.position.set(px, 0.21, pz);
+                pcbGroup.add(screw);
+            });
+        }
+        bindClickable(pcbGroup, 'controller_pcb');
+
+        // ----------------------------------------------------------------------------
+        // #9. SATA DATA CONNECTOR (Old-Chap 7-pinli L-simon Oltin Kontaktli Ulagich)
+        // ----------------------------------------------------------------------------
+        const sataDataGroup = initPartGroup('sata_data');
+        {
+            const shroud = new THREE.Mesh(new THREE.BoxGeometry(1.92, 0.42, 0.72), MAT.ebonyPlastic);
+            shroud.position.set(-1.55, -0.22, 4.88);
+            sataDataGroup.add(shroud);
+
+            const lTongue = new THREE.Mesh(new THREE.BoxGeometry(1.46, 0.08, 0.58), MAT.ebonyPlastic);
+            lTongue.position.set(-1.55, -0.20, 5.02);
+            sataDataGroup.add(lTongue);
+
+            const lKeyVert = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.22, 0.58), MAT.ebonyPlastic);
+            lKeyVert.position.set(-0.86, -0.15, 5.02);
+            sataDataGroup.add(lKeyVert);
+
+            // 7 ta yaltiroq 24K oltin kontakt pichoqchalari
+            for (let i = 0; i < 7; i++) {
+                const blade = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.045, 0.58), MAT.gold24k);
+                blade.position.set(-2.12 + i * 0.185, -0.17, 5.04);
+                sataDataGroup.add(blade);
+            }
+        }
+        bindClickable(sataDataGroup, 'sata_data');
+
+        // ----------------------------------------------------------------------------
+        // #10. SATA POWER CONNECTOR (Old-O'ng 15-pinli L-simon Oltin Kontaktli Ulagich)
+        // ----------------------------------------------------------------------------
+        const sataPowerGroup = initPartGroup('sata_power');
+        {
+            const shroud = new THREE.Mesh(new THREE.BoxGeometry(2.75, 0.42, 0.72), MAT.ebonyPlastic);
+            shroud.position.set(1.25, -0.22, 4.88);
+            sataPowerGroup.add(shroud);
+
+            const lTongue = new THREE.Mesh(new THREE.BoxGeometry(2.32, 0.08, 0.58), MAT.ebonyPlastic);
+            lTongue.position.set(1.25, -0.20, 5.02);
+            sataPowerGroup.add(lTongue);
+
+            const lKeyVert = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.22, 0.58), MAT.ebonyPlastic);
+            lKeyVert.position.set(0.12, -0.15, 5.02);
+            sataPowerGroup.add(lKeyVert);
+
+            // 15 ta yaltiroq 24K oltin quvvat kontaktlari
+            for (let i = 0; i < 15; i++) {
+                const blade = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.045, 0.58), MAT.gold24k);
+                blade.position.set(0.24 + i * 0.145, -0.17, 5.04);
+                sataPowerGroup.add(blade);
+            }
+        }
+        bindClickable(sataPowerGroup, 'sata_power');
+
+        // ----------------------------------------------------------------------------
+        // #5. TOP COVER (2-rasmdagi "HDD" Bo'rtma Yozuvli Kumush Qopqoq va 6 ta Murvat)
+        // ----------------------------------------------------------------------------
+        const topCoverGroup = initPartGroup('top_cover');
+        let topCoverPlateMat;
+        {
+            const coverTex = makeTopCoverHDDTex();
+            topCoverPlateMat = new THREE.MeshStandardMaterial({
+                color: 0xf1f5f9,
+                map: coverTex,
+                bumpMap: coverTex,
+                bumpScale: 0.032,
+                metalness: 0.88,
+                roughness: 0.20,
+                transparent: true,
+                opacity: 0.0 // Ochiq rejimda ichki qismlarni xiralashtirmasligi uchun 0.0
+            });
+
+            // 2-rasmdagi yon o'yiqli konturli qopqoq
+            const cShape = new THREE.Shape();
+            cShape.moveTo(-3.15, -4.80);
+            cShape.lineTo(3.15, -4.80);
+            cShape.quadraticCurveTo(3.50, -4.80, 3.50, -4.40);
+            cShape.lineTo(3.50, -0.88);
+            cShape.quadraticCurveTo(2.78, -0.46, 2.78, 0.0);
+            cShape.quadraticCurveTo(2.78, 0.46, 3.50, 0.88);
+            cShape.lineTo(3.50, 4.40);
+            cShape.quadraticCurveTo(3.50, 4.80, 3.15, 4.80);
+            cShape.lineTo(-3.15, 4.80);
+            cShape.quadraticCurveTo(-3.50, 4.80, -3.50, 4.40);
+            cShape.lineTo(-3.50, 0.88);
+            cShape.quadraticCurveTo(-2.78, 0.46, -2.78, 0.0);
+            cShape.quadraticCurveTo(-2.78, -0.46, -3.50, -0.88);
+            cShape.lineTo(-3.50, -4.40);
+            cShape.quadraticCurveTo(-3.50, -4.80, -3.15, -4.80);
+
+            const coverGeo = new THREE.ExtrudeGeometry(cShape, {
+                depth: 0.14,
+                bevelEnabled: true,
+                bevelThickness: 0.04,
+                bevelSize: 0.04,
+                bevelSegments: 4,
+                curveSegments: 48
+            });
+            coverGeo.rotateX(Math.PI / 2);
+
+            const posA = coverGeo.attributes.position;
+            const uvA = coverGeo.attributes.uv;
+            for (let i = 0; i < posA.count; i++) {
+                uvA.setXY(i, (posA.getX(i) + 3.55) / 7.1, 1.0 - (posA.getZ(i) + 4.85) / 9.7);
+            }
+            uvA.needsUpdate = true;
+
+            const coverPlate = new THREE.Mesh(coverGeo, topCoverPlateMat);
+            coverPlate.position.set(0, 1.05, 0);
+            topCoverGroup.add(coverPlate);
+
+            // 2-rasmdagi 6 ta yirik silindrik murvatlar
+            [
+                [-3.12, -4.52], [3.12, -4.52],
+                [-3.22, 0.0],   [3.22, 0.0],
+                [-3.12, 4.52],  [3.12, 4.52]
+            ].forEach(([bx, bz]) => {
+                const bolt = createTorxScrew(0.24, 0.15, true);
+                bolt.position.set(bx, 1.05, bz);
+                topCoverGroup.add(bolt);
+            });
+
+            // Ochiq rejimda ichki detallar 100% tiniq ko'rinishi uchun qopqoqni dastlab yashiramiz
+            topCoverGroup.visible = false;
+        }
+        bindClickable(topCoverGroup, 'top_cover');
+
+        // ============================================================================
+        // 5B. SSD (2.5" SOLID STATE DRIVE) — 1:1 CAD GEOMETRIYASI VA JONLI PULSLAR
+        // ============================================================================
+        let ssdTopCoverMat;
+        const ssdDataPulses = [];
+
+        // #8. SSD OSTKI METALL KORPUSI VA SHASSISI (Bottom CNC Tray & Brass Standoffs)
+        const ssdBottomGroup = initPartGroup('ssd_bottom_case', 'ssd');
+        {
+            const darkTitaniumMat = new THREE.MeshStandardMaterial({
+                color: 0x1e2532,
+                metalness: 0.78,
+                roughness: 0.30
+            });
+
+            // Asosiy ostki taglik (6.6 x 9.2 o'lcham)
+            const bottomTray = new THREE.Mesh(new THREE.BoxGeometry(6.6, 0.22, 9.2), darkTitaniumMat);
+            bottomTray.position.set(0, -0.22, 0);
+            ssdBottomGroup.add(bottomTray);
+
+            // Yon va orqa alyuminiy bort devorlari
+            const sideWallL = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.68, 9.2), darkTitaniumMat);
+            sideWallL.position.set(-3.16, 0.14, 0);
+            ssdBottomGroup.add(sideWallL);
+
+            const sideWallR = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.68, 9.2), darkTitaniumMat);
+            sideWallR.position.set(3.16, 0.14, 0);
+            ssdBottomGroup.add(sideWallR);
+
+            const backWall = new THREE.Mesh(new THREE.BoxGeometry(6.04, 0.68, 0.28), darkTitaniumMat);
+            backWall.position.set(0, 0.14, -4.46);
+            ssdBottomGroup.add(backWall);
+
+            // 4 ta burchak guruch (oltinrang) PCB mahkamlash ustunlari
+            [
+                [-2.75, -3.95], [2.75, -3.95],
+                [-2.75, 3.85],  [2.75, 3.85]
+            ].forEach(([sx, sz]) => {
+                const standoff = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, 0.28, 24), MAT.gold24k);
+                standoff.position.set(sx, 0.0, sz);
+                ssdBottomGroup.add(standoff);
+            });
+
+            // Old qirrada seriya shtrix-kod yorlig'i
+            const ssdBarcode = new THREE.Mesh(
+                new THREE.PlaneGeometry(2.1, 0.38),
+                new THREE.MeshBasicMaterial({ map: makeBarcodeStickerTex() })
+            );
+            ssdBarcode.position.set(1.75, 0.16, 4.61);
+            ssdBottomGroup.add(ssdBarcode);
+        }
+        bindClickable(ssdBottomGroup, 'ssd_bottom_case', 'ssd');
+
+        // #4. SSD ASOSIY YUQORI ZICHLIKDAGI PLATA (8-Layer PCB + Jonli Elektron Impulslar)
+        const ssdPcbGroup = initPartGroup('ssd_pcb', 'ssd');
+        {
+            const ssdPcbTex = makeSSDHighDensityPCBTex();
+            const ssdPcbMat = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                map: ssdPcbTex,
+                metalness: 0.35,
+                roughness: 0.28
+            });
+
+            const mainBoard = new THREE.Mesh(new THREE.BoxGeometry(5.96, 0.14, 8.55), ssdPcbMat);
+            mainBoard.position.set(0, 0.12, 0.06);
+            ssdPcbGroup.add(mainBoard);
+
+            // Burchaklardagi 4 ta oltin halqali Torx mahkamlash vintlari
+            [
+                [-2.75, -3.95], [2.75, -3.95],
+                [-2.75, 3.85],  [2.75, 3.85]
+            ].forEach(([px, pz]) => {
+                const pad = new THREE.Mesh(new THREE.CylinderGeometry(0.20, 0.20, 0.02, 24), MAT.gold24k);
+                pad.position.set(px, 0.20, pz);
+                ssdPcbGroup.add(pad);
+
+                const screw = createTorxScrew(0.11, 0.06, false);
+                screw.position.set(px, 0.21, pz);
+                ssdPcbGroup.add(screw);
+            });
+
+            // JONLI ELEKTRON MA'LUMOT IMPULSLARI (SATA -> Kontroller -> DRAM -> 8 ta NAND)
+            const pulseRoutes = [
+                // SATA Data dan Kontrollerga
+                { start: new THREE.Vector3(-1.35, 0.21, 4.15), end: new THREE.Vector3(-0.95, 0.21, 2.25), color: 0x38bdf8, speed: 1.8 },
+                { start: new THREE.Vector3(-0.95, 0.21, 2.25), end: new THREE.Vector3(-1.35, 0.21, 4.15), color: 0x22d3ee, speed: 2.1 },
+                // Kontroller va DRAM o'rtasida
+                { start: new THREE.Vector3(-0.45, 0.21, 2.20), end: new THREE.Vector3(0.75, 0.21, 2.20),  color: 0xfbbf24, speed: 2.8 },
+                { start: new THREE.Vector3(0.75, 0.21, 2.10),  end: new THREE.Vector3(-0.45, 0.21, 2.10), color: 0xf59e0b, speed: 2.6 },
+                // Kontrollerdan 8 ta NAND Flash chiplariga
+                { start: new THREE.Vector3(-0.95, 0.21, 1.65), end: new THREE.Vector3(-1.45, 0.21, 0.45),  color: 0x38bdf8, speed: 1.9 },
+                { start: new THREE.Vector3(-0.95, 0.21, 1.65), end: new THREE.Vector3(-1.45, 0.21, -0.75), color: 0x38bdf8, speed: 1.6 },
+                { start: new THREE.Vector3(-0.95, 0.21, 1.65), end: new THREE.Vector3(-1.45, 0.21, -1.95), color: 0x22d3ee, speed: 1.5 },
+                { start: new THREE.Vector3(-0.95, 0.21, 1.65), end: new THREE.Vector3(-1.45, 0.21, -3.15), color: 0x38bdf8, speed: 1.4 },
+                { start: new THREE.Vector3(-0.45, 0.21, 1.65), end: new THREE.Vector3(1.45, 0.21, 0.45),   color: 0x34d399, speed: 2.0 },
+                { start: new THREE.Vector3(-0.45, 0.21, 1.65), end: new THREE.Vector3(1.45, 0.21, -0.75),  color: 0x38bdf8, speed: 1.7 },
+                { start: new THREE.Vector3(-0.45, 0.21, 1.65), end: new THREE.Vector3(1.45, 0.21, -1.95),  color: 0x34d399, speed: 1.5 },
+                { start: new THREE.Vector3(-0.45, 0.21, 1.65), end: new THREE.Vector3(1.45, 0.21, -3.15),  color: 0x22d3ee, speed: 1.3 }
+            ];
+
+            pulseRoutes.forEach((route, idx) => {
+                // Yo'lak izi
+                const pts = [route.start, new THREE.Vector3(route.end.x, 0.21, route.start.z), route.end];
+                const lineGeo = new THREE.BufferGeometry().setFromPoints(pts);
+                const lineMesh = new THREE.Line(
+                    lineGeo,
+                    new THREE.LineBasicMaterial({ color: route.color, transparent: true, opacity: 0.45 })
+                );
+                ssdPcbGroup.add(lineMesh);
+
+                // Harakatlanuvchi yorug'lik paketi
+                const packet = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.065, 12, 12),
+                    new THREE.MeshBasicMaterial({ color: route.color })
+                );
+                packet.position.copy(route.start);
+                ssdPcbGroup.add(packet);
+
+                ssdDataPulses.push({
+                    mesh: packet,
+                    p0: route.start,
+                    p1: new THREE.Vector3(route.end.x, 0.21, route.start.z),
+                    p2: route.end,
+                    t: (idx * 0.17) % 1.0,
+                    speed: route.speed
+                });
+            });
+        }
+        bindClickable(ssdPcbGroup, 'ssd_pcb', 'ssd');
+
+        // #1. 3D NAND FLASH XOTIRA CHIPLARI (8 ta BGA Paket: 2 ustun x 4 qator)
+        const ssdNandGroup = initPartGroup('ssd_nand', 'ssd');
+        {
+            const nandZCoords = [0.45, -0.75, -1.95, -3.15];
+            const nandXCoords = [-1.45, 1.45];
+
+            let chipIndex = 1;
+            nandXCoords.forEach((nx) => {
+                nandZCoords.forEach((nz) => {
+                    const nandPkg = new THREE.Group();
+                    nandPkg.position.set(nx, 0.26, nz);
+
+                    // Yashil-oltin BGA interposer tagligi
+                    const substrate = new THREE.Mesh(
+                        new THREE.BoxGeometry(1.78, 0.04, 0.98),
+                        new THREE.MeshStandardMaterial({ color: 0x065f46, metalness: 0.4, roughness: 0.3 })
+                    );
+                    substrate.position.y = -0.05;
+                    nandPkg.add(substrate);
+
+                    // Qora epoksi BGA korpusi va lazer yozuvi
+                    const nandTex = makeICPackageTex('SAMSUNG', `V-NAND 256G`, `U${chipIndex} TLC-176L`);
+                    const body = new THREE.Mesh(
+                        new THREE.BoxGeometry(1.72, 0.13, 0.92),
+                        new THREE.MeshStandardMaterial({ map: nandTex, roughness: 0.24, metalness: 0.20 })
+                    );
+                    nandPkg.add(body);
+
+                    // Oltin Pin-1 burchak uchburchagi
+                    const goldCorner = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.135, 0.12), MAT.gold24k);
+                    goldCorner.position.set(-0.76, 0.002, -0.36);
+                    nandPkg.add(goldCorner);
+
+                    ssdNandGroup.add(nandPkg);
+                    chipIndex++;
+                });
+            });
+        }
+        bindClickable(ssdNandGroup, 'ssd_nand', 'ssd');
+
+        // #2. SSD KONTROLLER PROZESSORI (ARM Multi-Core SoC + Nickel Heat Spreader)
+        const ssdCtrlGroup = initPartGroup('ssd_controller', 'ssd');
+        {
+            const ctrlPos = new THREE.Vector3(-0.95, 0.27, 2.25);
+
+            // BGA yashil substrat
+            const sub = new THREE.Mesh(
+                new THREE.BoxGeometry(1.38, 0.05, 1.38),
+                new THREE.MeshStandardMaterial({ color: 0x047857, metalness: 0.4, roughness: 0.3 })
+            );
+            sub.position.set(ctrlPos.x, ctrlPos.y - 0.05, ctrlPos.z);
+            ssdCtrlGroup.add(sub);
+
+            // Qora protsessor asosi
+            const corePkg = new THREE.Mesh(
+                new THREE.BoxGeometry(1.28, 0.11, 1.28),
+                new THREE.MeshStandardMaterial({
+                    map: makeICPackageTex('PHISON', 'PS5018-E18', 'ARM CORTEX'),
+                    roughness: 0.22,
+                    metalness: 0.35
+                })
+            );
+            corePkg.position.copy(ctrlPos);
+            ssdCtrlGroup.add(corePkg);
+
+            // Kumush-nikel issiqlik tarqatuvchi ramka (Metal IHS Rim)
+            const ihsRim = new THREE.Mesh(new THREE.BoxGeometry(1.32, 0.08, 1.32), MAT.brushedSilver);
+            ihsRim.position.set(ctrlPos.x, ctrlPos.y - 0.01, ctrlPos.z);
+            ssdCtrlGroup.add(ihsRim);
+
+            // Oltin BGA sharchalar qatori (chetlaridan ko'rinib turadi)
+            for (let i = -5; i <= 5; i++) {
+                const ballA = new THREE.Mesh(new THREE.SphereGeometry(0.025, 8, 8), MAT.gold24k);
+                ballA.position.set(ctrlPos.x + i * 0.11, 0.20, ctrlPos.z + 0.68);
+                const ballB = ballA.clone();
+                ballB.position.z = ctrlPos.z - 0.68;
+                ssdCtrlGroup.add(ballA, ballB);
+            }
+        }
+        bindClickable(ssdCtrlGroup, 'ssd_controller', 'ssd');
+
+        // #3. DRAM KESH XOTIRA (2GB LPDDR4 Cache IC)
+        const ssdDramGroup = initPartGroup('ssd_dram', 'ssd');
+        {
+            const dramPos = new THREE.Vector3(0.75, 0.26, 2.15);
+            const dramTex = makeICPackageTex('MICRON', 'LPDDR4 2GB', 'D9ZCL 4266');
+            const dramChip = new THREE.Mesh(
+                new THREE.BoxGeometry(0.96, 0.13, 1.18),
+                new THREE.MeshStandardMaterial({ map: dramTex, roughness: 0.24, metalness: 0.22 })
+            );
+            dramChip.position.copy(dramPos);
+            ssdDramGroup.add(dramChip);
+
+            const dramSub = new THREE.Mesh(
+                new THREE.BoxGeometry(1.02, 0.04, 1.24),
+                new THREE.MeshStandardMaterial({ color: 0x065f46, metalness: 0.4, roughness: 0.3 })
+            );
+            dramSub.position.set(dramPos.x, 0.21, dramPos.z);
+            ssdDramGroup.add(dramSub);
+        }
+        bindClickable(ssdDramGroup, 'ssd_dram', 'ssd');
+
+        // #6. TERMAL SOVUTISH PADLARI (Silicone Blue Thermal Interface Pads)
+        const ssdThermalGroup = initPartGroup('ssd_thermal_pad', 'ssd');
+        {
+            const thermalMat = new THREE.MeshStandardMaterial({
+                color: 0x0284c7,
+                roughness: 0.65,
+                metalness: 0.05,
+                transparent: true,
+                opacity: 0.86
+            });
+
+            // O'ng NAND qatori va Kontroller ustidagi yumshoq silikon termal padlar
+            const padNandR = new THREE.Mesh(new THREE.BoxGeometry(1.76, 0.10, 4.65), thermalMat);
+            padNandR.position.set(1.45, 0.40, -1.35);
+            ssdThermalGroup.add(padNandR);
+
+            const padCtrl = new THREE.Mesh(new THREE.BoxGeometry(1.30, 0.10, 1.30), thermalMat);
+            padCtrl.position.set(-0.95, 0.40, 2.25);
+            ssdThermalGroup.add(padCtrl);
+        }
+        bindClickable(ssdThermalGroup, 'ssd_thermal_pad', 'ssd');
+
+        // #7. QUVVAT BOSHQARUVI VA PLP KONDENSATORLAR (PMIC, Inductors & Yellow Tantalum Caps)
+        const ssdPmicGroup = initPartGroup('ssd_pmic_plp', 'ssd');
+        {
+            const yellowTantalumMat = new THREE.MeshStandardMaterial({
+                color: 0xfacc15,
+                roughness: 0.32,
+                metalness: 0.12
+            });
+            const orangeStripeMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.3 });
+
+            // 5 ta PLP Sariq Tantal Kondensatorlar qatori
+            for (let i = 0; i < 5; i++) {
+                const capGrp = new THREE.Group();
+                capGrp.position.set(2.15, 0.25, 1.55 + i * 0.44);
+
+                const body = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.13, 0.26), yellowTantalumMat);
+                const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.134, 0.264), orangeStripeMat);
+                stripe.position.x = -0.16;
+                const termL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.12, 0.22), MAT.brushedSilver);
+                termL.position.x = -0.24;
+                const termR = termL.clone();
+                termR.position.x = 0.24;
+
+                capGrp.add(body, stripe, termL, termR);
+                ssdPmicGroup.add(capGrp);
+            }
+
+            // PMIC QFN mikrochipi va 2 ta ferrit drossel (Inductors)
+            const pmicChip = new THREE.Mesh(
+                new THREE.BoxGeometry(0.58, 0.11, 0.58),
+                new THREE.MeshStandardMaterial({ map: makeICPackageTex('PMIC', 'RT7290', 'VRM 5V'), roughness: 0.28 })
+            );
+            pmicChip.position.set(-2.22, 0.25, 2.15);
+            ssdPmicGroup.add(pmicChip);
+
+            [2.85, 3.35].forEach((iz) => {
+                const inductor = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.52, 0.18, 0.42),
+                    new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.45, roughness: 0.4 })
+                );
+                inductor.position.set(-2.22, 0.28, iz);
+                ssdPmicGroup.add(inductor);
+            });
+        }
+        bindClickable(ssdPmicGroup, 'ssd_pmic_plp', 'ssd');
+
+        // #9. SSD SATA III DATA ULAGICHI (7-Pin Gold Interface)
+        const ssdSataDataGroup = initPartGroup('ssd_sata_data', 'ssd');
+        {
+            const shroud = new THREE.Mesh(new THREE.BoxGeometry(1.78, 0.32, 0.65), MAT.ebonyPlastic);
+            shroud.position.set(-1.35, 0.08, 4.42);
+            ssdSataDataGroup.add(shroud);
+
+            for (let i = 0; i < 7; i++) {
+                const pin = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.04, 0.56), MAT.gold24k);
+                pin.position.set(-1.88 + i * 0.175, 0.14, 4.48);
+                ssdSataDataGroup.add(pin);
+            }
+        }
+        bindClickable(ssdSataDataGroup, 'ssd_sata_data', 'ssd');
+
+        // #10. SSD SATA POWER ULAGICHI (15-Pin Gold Interface)
+        const ssdSataPowerGroup = initPartGroup('ssd_sata_power', 'ssd');
+        {
+            const shroud = new THREE.Mesh(new THREE.BoxGeometry(2.55, 0.32, 0.65), MAT.ebonyPlastic);
+            shroud.position.set(1.15, 0.08, 4.42);
+            ssdSataPowerGroup.add(shroud);
+
+            for (let i = 0; i < 15; i++) {
+                const pin = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.04, 0.56), MAT.gold24k);
+                pin.position.set(0.18 + i * 0.138, 0.14, 4.48);
+                ssdSataPowerGroup.add(pin);
+            }
+        }
+        bindClickable(ssdSataPowerGroup, 'ssd_sata_power', 'ssd');
+
+        // #5. SSD USTKI ALYUMINIY QOPQOG'I ("SSD SOLID STATE DRIVE")
+        const ssdTopCoverGroup = initPartGroup('ssd_top_cover', 'ssd');
+        {
+            const ssdCoverTex = makeSSDTopCoverTex();
+            ssdTopCoverMat = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                map: ssdCoverTex,
+                metalness: 0.82,
+                roughness: 0.22,
+                transparent: true,
+                opacity: 0.0
+            });
+
+            const topShell = new THREE.Mesh(new THREE.BoxGeometry(6.6, 0.16, 9.2), ssdTopCoverMat);
+            topShell.position.set(0, 0.62, 0);
+            ssdTopCoverGroup.add(topShell);
+
+            // 4 ta burchak Torx murvatlari
+            [
+                [-2.98, -4.25], [2.98, -4.25],
+                [-2.98, 4.25],  [2.98, 4.25]
+            ].forEach(([bx, bz]) => {
+                const bolt = createTorxScrew(0.16, 0.09, true);
+                bolt.position.set(bx, 0.66, bz);
+                ssdTopCoverGroup.add(bolt);
+            });
+
+            ssdTopCoverGroup.visible = false;
+        }
+        bindClickable(ssdTopCoverGroup, 'ssd_top_cover', 'ssd');
+
+        // ============================================================================
+        // 5C. M.2 2280 NVMe PCIe 4.0 x4 SSD — 1:1 CAD GEOMETRIYASI (10 TA ELEMENT)
+        // ============================================================================
+        let nvmeHeatsinkMat;
+        const nvmeDataPulses = [];
+
+        // #7. 10-QATLAMLI QORA MAT M.2 2280 PCB PLATA (M-Key tirqishi va Yarim oy kesimi bilan)
+        const nvmePcbGroup = initPartGroup('nvme_pcb', 'nvme');
+        {
+            const nvmePcbTex = makeNVMeM2PCBTex();
+            const nvmeBoardMat = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                map: nvmePcbTex,
+                metalness: 0.36,
+                roughness: 0.28
+            });
+
+            // M.2 2280 aniq konturi: uzunligi 9.6 birlik (80mm), kengligi 2.64 birlik (22mm)
+            // Chap uchida M-Key kesimi, o'ng uchida yarim oy (Half-moon) kesimi bilan ExtrudeGeometry
+            const bShape = new THREE.Shape();
+            const hw = 4.80; // yarim uzunlik
+            const hd = 1.32; // yarim kenglik
+
+            bShape.moveTo(-hw + 0.42, -hd);
+            bShape.lineTo(hw, -hd);
+            // O'ng qirradagi yarim oy (Semicircular mounting cutout)
+            bShape.lineTo(hw, -0.32);
+            bShape.absarc(hw, 0, 0.32, -Math.PI / 2, Math.PI / 2, true);
+            bShape.lineTo(hw, hd);
+            bShape.lineTo(-hw + 0.42, hd);
+            // Chap qirradagi M-Key tilchasi va tirqishi (Key M Notch at z = -0.52)
+            bShape.lineTo(-hw + 0.42, 1.16);
+            bShape.lineTo(-hw, 1.16);
+            bShape.lineTo(-hw, -0.36);
+            bShape.lineTo(-hw + 0.48, -0.36); // M-key chuqurchasi
+            bShape.lineTo(-hw + 0.48, -0.58);
+            bShape.lineTo(-hw, -0.58);
+            bShape.lineTo(-hw, -1.16);
+            bShape.lineTo(-hw + 0.42, -1.16);
+            bShape.closePath();
+
+            const pcbGeo = new THREE.ExtrudeGeometry(bShape, {
+                depth: 0.11,
+                bevelEnabled: true,
+                bevelThickness: 0.012,
+                bevelSize: 0.012,
+                bevelSegments: 2,
+                curveSegments: 36
+            });
+            pcbGeo.rotateX(Math.PI / 2);
+
+            // UV koordinatalarini tekislash
+            const pAttr = pcbGeo.attributes.position;
+            const uAttr = pcbGeo.attributes.uv;
+            for (let i = 0; i < pAttr.count; i++) {
+                uAttr.setXY(i, (pAttr.getX(i) + hw) / (hw * 2), (pAttr.getZ(i) + hd) / (hd * 2));
+            }
+            uAttr.needsUpdate = true;
+
+            const m2BoardMesh = new THREE.Mesh(pcbGeo, nvmeBoardMat);
+            m2BoardMesh.position.y = 0.08;
+            nvmePcbGroup.add(m2BoardMesh);
+
+            // JONLI PCIe 4.0 x4 ELEKTRON MA'LUMOT IMPULSLARI (7,450 MB/s 4-Lane + 8-Channel NAND)
+            const nvmeRoutes = [
+                // 4 ta PCIe 4.0 Lane: #5 M-Key oltin pinlardan -> #2 NVMe Kontrollerga
+                { start: new THREE.Vector3(-4.65, 0.11, -0.15), mid: new THREE.Vector3(-3.45, 0.11, -0.15), end: new THREE.Vector3(-2.35, 0.11, -0.15), color: 0xf43f5e, speed: 3.2 },
+                { start: new THREE.Vector3(-4.65, 0.11,  0.10), mid: new THREE.Vector3(-3.45, 0.11,  0.10), end: new THREE.Vector3(-2.35, 0.11,  0.10), color: 0xec4899, speed: 3.5 },
+                { start: new THREE.Vector3(-2.35, 0.11,  0.35), mid: new THREE.Vector3(-3.45, 0.11,  0.35), end: new THREE.Vector3(-4.65, 0.11,  0.35), color: 0x38bdf8, speed: 3.4 },
+                { start: new THREE.Vector3(-2.35, 0.11,  0.60), mid: new THREE.Vector3(-3.45, 0.11,  0.60), end: new THREE.Vector3(-4.65, 0.11,  0.60), color: 0x22d3ee, speed: 3.1 },
+                // Kontroller <-> #3 LPDDR4X DRAM Kesh Xotira
+                { start: new THREE.Vector3(-1.75, 0.11, 0.25),  mid: new THREE.Vector3(-1.15, 0.11, 0.25),  end: new THREE.Vector3(-0.65, 0.11, 0.25),  color: 0xfbbf24, speed: 4.0 },
+                { start: new THREE.Vector3(-0.65, 0.11, 0.05),  mid: new THREE.Vector3(-1.15, 0.11, 0.05),  end: new THREE.Vector3(-1.75, 0.11, 0.05),  color: 0xf59e0b, speed: 3.8 },
+                // Kontroller -> 4 ta #1 3D V-NAND Flash paketlariga
+                { start: new THREE.Vector3(-1.75, 0.11, -0.45), mid: new THREE.Vector3(-0.20, 0.11, -0.58), end: new THREE.Vector3(0.95, 0.11, -0.58),  color: 0x38bdf8, speed: 2.8 },
+                { start: new THREE.Vector3(-1.75, 0.11, -0.35), mid: new THREE.Vector3(1.10, 0.11, -0.58),  end: new THREE.Vector3(3.05, 0.11, -0.58),  color: 0xa855f7, speed: 2.5 },
+                { start: new THREE.Vector3(-1.75, 0.11,  0.45), mid: new THREE.Vector3(-0.20, 0.11,  0.58), end: new THREE.Vector3(0.95, 0.11,  0.58),  color: 0x22d3ee, speed: 2.9 },
+                { start: new THREE.Vector3(-1.75, 0.11,  0.55), mid: new THREE.Vector3(1.10, 0.11,  0.58),  end: new THREE.Vector3(3.05, 0.11,  0.58),  color: 0xec4899, speed: 2.6 }
+            ];
+
+            nvmeRoutes.forEach((r, idx) => {
+                const pts = [r.start, r.mid, r.end];
+                const traceLine = new THREE.Line(
+                    new THREE.BufferGeometry().setFromPoints(pts),
+                    new THREE.LineBasicMaterial({ color: r.color, transparent: true, opacity: 0.55 })
+                );
+                nvmePcbGroup.add(traceLine);
+
+                const orb = new THREE.Mesh(
+                    new THREE.SphereGeometry(0.055, 12, 12),
+                    new THREE.MeshBasicMaterial({ color: r.color })
+                );
+                orb.position.copy(r.start);
+                nvmePcbGroup.add(orb);
+
+                nvmeDataPulses.push({
+                    mesh: orb,
+                    p0: r.start,
+                    p1: r.mid,
+                    p2: r.end,
+                    t: (idx * 0.13) % 1.0,
+                    speed: r.speed
+                });
+            });
+        }
+        bindClickable(nvmePcbGroup, 'nvme_pcb', 'nvme');
+
+        // #5. M.2 M-KEY OLTIN KONTAKTLI ULAGICH (67-Pin Beveled Gold Edge Fingers & Key Notch)
+        const nvmeMKeyGroup = initPartGroup('nvme_mkey', 'nvme');
+        {
+            // Yuqori qismdagi asosiy oltin barmoqchalar (z = -0.30 dan +1.10 gacha)
+            for (let z = -0.28; z <= 1.08; z += 0.075) {
+                const fingerTop = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.024, 0.046), MAT.gold24k);
+                fingerTop.position.set(-4.60, 0.092, z);
+                const fingerBot = fingerTop.clone();
+                fingerBot.position.y = -0.042;
+                nvmeMKeyGroup.add(fingerTop, fingerBot);
+            }
+
+            // M-Key kesimidan keyingi 5 ta oltin kontakt barmoqchalari (z = -1.10 dan -0.64 gacha)
+            for (let i = 0; i < 5; i++) {
+                const z = -1.08 + i * 0.10;
+                const keyFingerTop = new THREE.Mesh(new THREE.BoxGeometry(0.40, 0.024, 0.052), MAT.gold24k);
+                keyFingerTop.position.set(-4.60, 0.092, z);
+                const keyFingerBot = keyFingerTop.clone();
+                keyFingerBot.position.y = -0.042;
+                nvmeMKeyGroup.add(keyFingerTop, keyFingerBot);
+            }
+
+            // Oltin faskali old qirra
+            const bevelStrip = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.11, 1.42), MAT.gold24k);
+            bevelStrip.position.set(-4.80, 0.025, 0.40);
+            nvmeMKeyGroup.add(bevelStrip);
+        }
+        bindClickable(nvmeMKeyGroup, 'nvme_mkey', 'nvme');
+
+        // #6. YARIM OY KESIMI, OLTIN YERGA ULASH HALQASI VA M2 STANDOFF VINTI
+        const nvmeMountGroup = initPartGroup('nvme_mount', 'nvme');
+        {
+            // PCB o'ng uchidagi yarim oy shaklidagi oltin Ground halqasi
+            const groundArc = new THREE.Mesh(
+                new THREE.RingGeometry(0.31, 0.48, 32, 1, Math.PI / 2, Math.PI),
+                new THREE.MeshStandardMaterial({ color: 0xfbbf24, metalness: 0.95, roughness: 0.12, side: THREE.DoubleSide })
+            );
+            groundArc.rotation.x = -Math.PI / 2;
+            groundArc.position.set(4.80, 0.095, 0);
+            nvmeMountGroup.add(groundArc);
+
+            // Yarim oy atrofidagi 5 ta oltin grounding via nuqtalari
+            for (let a = 0.65; a <= 2.50; a += 0.45) {
+                const dot = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 0.13, 12), MAT.gold24k);
+                dot.position.set(4.80 - Math.sin(a) * 0.39, 0.03, Math.cos(a) * 0.39);
+                nvmeMountGroup.add(dot);
+            }
+
+            // Oltiburchak guruch (Brass) Motherboard Standoff ustuni (plata ostida)
+            const brassStandoff = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.28, 0.45, 6), MAT.gold24k);
+            brassStandoff.position.set(4.80, -0.26, 0);
+            nvmeMountGroup.add(brassStandoff);
+
+            // Yuqoridan qotiriladigan xrom M2x3mm qotirish vinti
+            const m2Screw = createTorxScrew(0.26, 0.11, true);
+            m2Screw.position.set(4.80, 0.14, 0);
+            nvmeMountGroup.add(m2Screw);
+
+            const m2Thread = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.11, 0.36, 20), MAT.mirrorChrome);
+            m2Thread.position.set(4.80, -0.02, 0);
+            nvmeMountGroup.add(m2Thread);
+        }
+        bindClickable(nvmeMountGroup, 'nvme_mount', 'nvme');
+
+        // #1. 3D V-NAND FLASH CHIPLARI (4 ta Yirik BGA Paket + Kumush Sharchalar)
+        const nvmeNandGroup = initPartGroup('nvme_nand', 'nvme');
+        {
+            const nandCoords = [
+                { x: 0.95, z: -0.58, label: 'NAND-01 512G' },
+                { x: 0.95, z:  0.58, label: 'NAND-02 512G' },
+                { x: 3.05, z: -0.58, label: 'NAND-03 512G' },
+                { x: 3.05, z:  0.58, label: 'NAND-04 512G' }
+            ];
+
+            nandCoords.forEach((nc, idx) => {
+                const pkg = new THREE.Group();
+                pkg.position.set(nc.x, 0.18, nc.z);
+
+                // BGA interposer qatlami
+                const interposer = new THREE.Mesh(
+                    new THREE.BoxGeometry(1.78, 0.035, 0.96),
+                    new THREE.MeshStandardMaterial({ color: 0x065f46, metalness: 0.45, roughness: 0.3 })
+                );
+                interposer.position.y = -0.055;
+                pkg.add(interposer);
+
+                // Yuqori aniqlikdagi BGA epoksi korpus va lazerli Samsung V-NAND markirovkasi
+                const chipTex = makeICPackageTex('SAMSUNG', 'V-NAND 236L', nc.label);
+                const body = new THREE.Mesh(
+                    new THREE.BoxGeometry(1.74, 0.12, 0.92),
+                    new THREE.MeshStandardMaterial({ map: chipTex, roughness: 0.22, metalness: 0.24 })
+                );
+                pkg.add(body);
+
+                // Oltin Pin-1 burchak belgisi
+                const pin1Dot = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.125, 16), MAT.gold24k);
+                pin1Dot.position.set(-0.72, 0.002, -0.34);
+                pkg.add(pin1Dot);
+
+                // Ostki kumush BGA kavshar sharchalari (Explode qilinganda yaqqol ko'rinadi)
+                for (let bx = -0.68; bx <= 0.68; bx += 0.34) {
+                    for (let bz = -0.32; bz <= 0.32; bz += 0.32) {
+                        const ball = new THREE.Mesh(new THREE.SphereGeometry(0.028, 8, 8), MAT.mirrorChrome);
+                        ball.position.set(bx, -0.08, bz);
+                        pkg.add(ball);
+                    }
+                }
+
+                nvmeNandGroup.add(pkg);
+            });
+        }
+        bindClickable(nvmeNandGroup, 'nvme_nand', 'nvme');
+
+        // #2. PCIe 4.0 NVMe KONTROLLER PROZESSORI (8-Kanalli ARM SoC + Nikel IHS Qopqog'i)
+        const nvmeCtrlGroup = initPartGroup('nvme_controller', 'nvme');
+        {
+            const ctrlPos = new THREE.Vector3(-2.35, 0.19, 0.05);
+
+            // Yashil-oltin BGA substrat
+            const substrate = new THREE.Mesh(
+                new THREE.BoxGeometry(1.48, 0.045, 1.48),
+                new THREE.MeshStandardMaterial({ color: 0x047857, metalness: 0.45, roughness: 0.28 })
+            );
+            substrate.position.set(ctrlPos.x, 0.12, ctrlPos.z);
+            nvmeCtrlGroup.add(substrate);
+
+            // Oltin burchak kontaktlari
+            const goldRim = new THREE.Mesh(new THREE.BoxGeometry(1.50, 0.02, 1.50), MAT.gold24k);
+            goldRim.position.set(ctrlPos.x, 0.145, ctrlPos.z);
+            nvmeCtrlGroup.add(goldRim);
+
+            // Nikel bilan qoplangan yaltiroq metall IHS ramkasi
+            const nickelIHS = new THREE.Mesh(new THREE.BoxGeometry(1.36, 0.11, 1.36), MAT.mirrorChrome);
+            nickelIHS.position.set(ctrlPos.x, 0.195, ctrlPos.z);
+            nvmeCtrlGroup.add(nickelIHS);
+
+            // Markaziy lazerli kremniy kristalli va yozuvi
+            const dieTop = new THREE.Mesh(
+                new THREE.BoxGeometry(1.18, 0.125, 1.18),
+                new THREE.MeshStandardMaterial({
+                    map: makeICPackageTex('PHISON', 'PS5018-E18', 'PCIe 4.0 x4'),
+                    metalness: 0.45,
+                    roughness: 0.18
+                })
+            );
+            dieTop.position.set(ctrlPos.x, 0.198, ctrlPos.z);
+            nvmeCtrlGroup.add(dieTop);
+        }
+        bindClickable(nvmeCtrlGroup, 'nvme_controller', 'nvme');
+
+        // #3. LPDDR4X DRAM KESH XOTIRA CHIPI (2GB 4266Mbps BGA)
+        const nvmeDramGroup = initPartGroup('nvme_dram', 'nvme');
+        {
+            const dramPos = new THREE.Vector3(-0.68, 0.18, 0.18);
+
+            const sub = new THREE.Mesh(
+                new THREE.BoxGeometry(1.02, 0.04, 1.32),
+                new THREE.MeshStandardMaterial({ color: 0x065f46, metalness: 0.4, roughness: 0.3 })
+            );
+            sub.position.set(dramPos.x, 0.12, dramPos.z);
+            nvmeDramGroup.add(sub);
+
+            const dramBody = new THREE.Mesh(
+                new THREE.BoxGeometry(0.96, 0.115, 1.26),
+                new THREE.MeshStandardMaterial({
+                    map: makeICPackageTex('SK HYNIX', 'LPDDR4X 2G', '4266 Mbps'),
+                    roughness: 0.22,
+                    metalness: 0.25
+                })
+            );
+            dramBody.position.copy(dramPos);
+            nvmeDramGroup.add(dramBody);
+        }
+        bindClickable(nvmeDramGroup, 'nvme_dram', 'nvme');
+
+        // #4. PMIC QUVVAT BOSHQARUV CHIPI, FERRIT DROSSELLAR (1R0) VA MLCC KONDENSATORLAR
+        const nvmePmicGroup = initPartGroup('nvme_pmic', 'nvme');
+        {
+            // PMIC QFN mikrochipi
+            const pmicChip = new THREE.Mesh(
+                new THREE.BoxGeometry(0.64, 0.10, 0.64),
+                new THREE.MeshStandardMaterial({
+                    map: makeICPackageTex('PMIC', 'PS6108-22', 'VRM CTRL'),
+                    roughness: 0.26,
+                    metalness: 0.3
+                })
+            );
+            pmicChip.position.set(-3.65, 0.16, 0.25);
+            nvmePmicGroup.add(pmicChip);
+
+            // 3 ta ekranlangan kulrang ferrit SMD induktor drossellar (1R0)
+            [-0.68, -0.25, 0.82].forEach((iz) => {
+                const inductor = new THREE.Mesh(
+                    new THREE.BoxGeometry(0.46, 0.15, 0.36),
+                    new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.52, roughness: 0.35 })
+                );
+                inductor.position.set(-3.65, 0.17, iz);
+                nvmePmicGroup.add(inductor);
+            });
+
+            // Keramik MLCC mikro-kondensatorlar qatori
+            const mlccCoords = [
+                [-3.20, -0.78], [-3.20, -0.52], [-3.20, -0.26],
+                [-1.35, -0.82], [-1.10, -0.82], [-0.85, -0.82],
+                [-0.55, -0.82], [0.05,  -0.12], [0.05,   0.12]
+            ];
+            mlccCoords.forEach(([mx, mz]) => {
+                const cap = new THREE.Group();
+                cap.position.set(mx, 0.13, mz);
+                const body = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.06, 0.08), MAT.tanCapacitor);
+                const tL = new THREE.Mesh(new THREE.BoxGeometry(0.035, 0.062, 0.082), MAT.brushedSilver);
+                tL.position.x = -0.06;
+                const tR = tL.clone();
+                tR.position.x = 0.06;
+                cap.add(body, tL, tR);
+                nvmePmicGroup.add(cap);
+            });
+        }
+        bindClickable(nvmePmicGroup, 'nvme_pmic', 'nvme');
+
+        // #8. YUQORI ISSIQLIK O'TKAZUVCHI TERMAL PADLAR (14.8 W/mK Cyan & Pink Silicone Pads)
+        const nvmeThermalGroup = initPartGroup('nvme_thermal', 'nvme');
+        {
+            const cyanPadMat = new THREE.MeshStandardMaterial({
+                color: 0x06b6d4,
+                roughness: 0.6,
+                metalness: 0.05,
+                transparent: true,
+                opacity: 0.86
+            });
+            const pinkPadMat = new THREE.MeshStandardMaterial({
+                color: 0xec4899,
+                roughness: 0.6,
+                metalness: 0.05,
+                transparent: true,
+                opacity: 0.86
+            });
+
+            // NAND chiplari ustidagi firuza termal pad
+            const nandPad = new THREE.Mesh(new THREE.BoxGeometry(3.95, 0.08, 2.15), cyanPadMat);
+            nandPad.position.set(2.00, 0.30, 0.0);
+            nvmeThermalGroup.add(nandPad);
+
+            // NVMe Kontroller va DRAM ustidagi pushti-binafsha termal pad
+            const ctrlPad = new THREE.Mesh(new THREE.BoxGeometry(2.75, 0.08, 1.55), pinkPadMat);
+            ctrlPad.position.set(-1.60, 0.30, 0.10);
+            nvmeThermalGroup.add(ctrlPad);
+        }
+        bindClickable(nvmeThermalGroup, 'nvme_thermal', 'nvme');
+
+        // #9. CNC ALYUMINIY SOVUTISH RADIATORI (Finned M.2 Heatsink + Copper Graphene Foil)
+        const nvmeHeatsinkGroup = initPartGroup('nvme_heatsink', 'nvme');
+        {
+            const hsTopTex = makeNVMeHeatsinkTopTex();
+            nvmeHeatsinkMat = new THREE.MeshStandardMaterial({
+                color: 0xffffff,
+                map: hsTopTex,
+                metalness: 0.85,
+                roughness: 0.22,
+                transparent: true,
+                opacity: 0.0
+            });
+
+            // Pastki mis-grafen issiqlik tarqatuvchi plastina
+            const copperBase = new THREE.Mesh(new THREE.BoxGeometry(8.55, 0.06, 2.48), MAT.kaptonCopper);
+            copperBase.position.set(0.10, 0.38, 0);
+            nvmeHeatsinkGroup.add(copperBase);
+
+            // Asosiy anodlangan CNC radiator tanasi
+            const mainBlock = new THREE.Mesh(new THREE.BoxGeometry(8.55, 0.28, 2.52), nvmeHeatsinkMat);
+            mainBlock.position.set(0.10, 0.55, 0);
+            nvmeHeatsinkGroup.add(mainBlock);
+
+            // Bo'ylama aerodinamik sovutish qovurg'alari (Cooling Fins)
+            for (let z = -0.96; z <= 0.96; z += 0.32) {
+                const fin = new THREE.Mesh(new THREE.BoxGeometry(8.45, 0.18, 0.14), nvmeHeatsinkMat);
+                fin.position.set(0.10, 0.76, z);
+                nvmeHeatsinkGroup.add(fin);
+            }
+
+            nvmeHeatsinkGroup.visible = false;
+        }
+        bindClickable(nvmeHeatsinkGroup, 'nvme_heatsink', 'nvme');
+
+        // #10. OSTKI METALL BACKPLATE VA SHTRIX-KOD PASPORTI
+        const nvmeBackplateGroup = initPartGroup('nvme_backplate', 'nvme');
+        {
+            const backMetalMat = new THREE.MeshStandardMaterial({
+                color: 0x1e293b,
+                metalness: 0.82,
+                roughness: 0.28
+            });
+
+            const bottomPlate = new THREE.Mesh(new THREE.BoxGeometry(8.55, 0.08, 2.56), backMetalMat);
+            bottomPlate.position.set(0.10, -0.10, 0);
+            nvmeBackplateGroup.add(bottomPlate);
+
+            // Yon qisqich qirralar (Retention clips)
+            const clipFront = new THREE.Mesh(new THREE.BoxGeometry(8.55, 0.22, 0.08), backMetalMat);
+            clipFront.position.set(0.10, -0.02, 1.28);
+            const clipBack = clipFront.clone();
+            clipBack.position.z = -1.28;
+            nvmeBackplateGroup.add(clipFront, clipBack);
+
+            // Old qirradagi mini shtrix-kod stikeri
+            const nvmeSticker = new THREE.Mesh(
+                new THREE.PlaneGeometry(2.4, 0.18),
+                new THREE.MeshBasicMaterial({ map: makeBarcodeStickerTex() })
+            );
+            nvmeSticker.position.set(0.10, -0.02, 1.33);
+            nvmeBackplateGroup.add(nvmeSticker);
+        }
+        bindClickable(nvmeBackplateGroup, 'nvme_backplate', 'nvme');
+
+        // ============================================================================
+        // 6. TASHQI PERIMETR CALLOUT PINLARI VA PASTKI COMPACT PILL BARNI DINAMIK YARATISH
+        // ============================================================================
+        let pinDOM = {};
+        let pillDOM = {};
+        const pillsBar = document.getElementById('part-pills-bar');
+
+        function rebuildPinsAndPills() {
+            pinsContainer.innerHTML = '';
+            // "Barchasi" tugmasidan keyingi barcha pill tugmalarni tozalash
+            while (pillsBar.children.length > 1) {
+                pillsBar.removeChild(pillsBar.lastChild);
+            }
+            pinDOM = {};
+            pillDOM = {};
+
+            PARTS_DATA.forEach((part) => {
+                // 1. Tashqi Perimetrdagi 3D Pin
+                const pin = document.createElement('div');
+                pin.className = 'pin-marker';
+                pin.innerHTML = `
+                    <span class="pin-num">${part.num}</span>
+                    <span class="pin-label">${part.name}</span>
+                `;
+                pin.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    focusOnPart(part.id, true);
+                });
+                pinsContainer.appendChild(pin);
+                pinDOM[part.id] = pin;
+
+                // 2. Pastki Dockdagi 1..10 Tezkor Tanlash Tugmasi
+                const pill = document.createElement('button');
+                pill.className = 'part-pill px-2.5 py-1 rounded-full text-[10.5px] font-semibold bg-slate-800/70 hover:bg-slate-700 text-slate-200 border border-slate-600/40 whitespace-nowrap flex items-center gap-1.5 flex-shrink-0';
+                pill.innerHTML = `<span class="w-4 h-4 rounded-full bg-sky-600 text-white text-[9.5px] font-extrabold flex items-center justify-center">${part.num}</span><span>${part.name}</span>`;
+                pill.addEventListener('click', () => focusOnPart(part.id, true));
+                pillsBar.appendChild(pill);
+                pillDOM[part.id] = pill;
+            });
+        }
+
+        rebuildPinsAndPills();
+
+        // Pastki chap/o'ng skroll tugmalari
+        document.getElementById('btn-scroll-left').addEventListener('click', () => {
+            pillsBar.scrollBy({ left: -220, behavior: 'smooth' });
+        });
+        document.getElementById('btn-scroll-right').addEventListener('click', () => {
+            pillsBar.scrollBy({ left: 220, behavior: 'smooth' });
+        });
+
+        // ============================================================================
+        // 7. QURILMANI ALMASHTIRISH (HDD <-> SSD), KAMERA ZOOM VA VIEW REJIMLARI
+        // ============================================================================
+        let activePartId = null;
+        let isPowered = true;
+        let rpmSpeed = 7200; // 7200 yoki 600 (Slow-Mo)
+        let pinsVisible = true;
+        let isolatedMode = false;
+        let currentViewMode = 'open'; // 'open', 'closed', 'explode'
+        const state = { explode: 0 };
+
+        const infoCard = document.getElementById('part-info-card');
+
+        function getActiveCoverGroup() {
+            if (currentDevice === 'hdd') return topCoverGroup;
+            if (currentDevice === 'ssd') return ssdTopCoverGroup;
+            return nvmeHeatsinkGroup;
+        }
+        function getActiveCoverMat() {
+            if (currentDevice === 'hdd') return topCoverPlateMat;
+            if (currentDevice === 'ssd') return ssdTopCoverMat;
+            return nvmeHeatsinkMat;
+        }
+        function getActiveCoverId() {
+            if (currentDevice === 'hdd') return 'top_cover';
+            if (currentDevice === 'ssd') return 'ssd_top_cover';
+            return 'nvme_heatsink';
+        }
+
+        function switchDevice(targetDev) {
+            if (currentDevice === targetDev) return;
+            currentDevice = targetDev;
+            isolatedMode = false;
+            activePartId = null;
+
+            const btnHdd = document.getElementById('btn-device-hdd');
+            const btnSdd = document.getElementById('btn-device-ssd');
+            const btnNvme = document.getElementById('btn-device-nvme');
+            const speedBtn = document.getElementById('btn-speed-toggle');
+
+            // Barcha tugmalarni nofaol holatga keltirish
+            [btnHdd, btnSdd, btnNvme].forEach(b => {
+                b.className = 'device-switch-btn px-2.5 py-1 rounded-full text-[11px] font-extrabold tracking-tight opacity-75 hover:opacity-100 flex items-center gap-1';
+            });
+
+            hddModel.visible = false;
+            ssdModel.visible = false;
+            nvmeModel.visible = false;
+
+            if (targetDev === 'hdd') {
+                PARTS_DATA = HDD_PARTS_DATA;
+                partGroups = hddPartGroups;
+                clickableMeshes = hddClickableMeshes;
+                hddModel.visible = true;
+
+                btnHdd.className = 'device-switch-btn active-hdd px-2.5 py-1 rounded-full text-[11px] font-extrabold tracking-tight flex items-center gap-1';
+                speedBtn.textContent = (rpmSpeed === 7200) ? '⏱️ 7200 RPM' : '⏱️ Slow-Mo';
+            } else if (targetDev === 'ssd') {
+                PARTS_DATA = SSD_PARTS_DATA;
+                partGroups = ssdPartGroups;
+                clickableMeshes = ssdClickableMeshes;
+                ssdModel.visible = true;
+
+                btnSdd.className = 'device-switch-btn active-ssd px-2.5 py-1 rounded-full text-[11px] font-extrabold tracking-tight flex items-center gap-1';
+                speedBtn.textContent = (rpmSpeed === 7200) ? '⚡ 560 MB/s' : '⚡ Slow-Pulse';
+            } else {
+                PARTS_DATA = NVME_PARTS_DATA;
+                partGroups = nvmePartGroups;
+                clickableMeshes = nvmeClickableMeshes;
+                nvmeModel.visible = true;
+
+                btnNvme.className = 'device-switch-btn active-nvme px-2.5 py-1 rounded-full text-[11px] font-extrabold tracking-tight flex items-center gap-1';
+                speedBtn.textContent = (rpmSpeed === 7200) ? '🚀 7450 MB/s' : '🚀 Slow-Pulse';
+            }
+
+            rebuildPinsAndPills();
+            focusOnPart(null, false);
+            setMainViewMode(currentViewMode);
+        }
+
+        document.getElementById('btn-device-hdd').addEventListener('click', () => switchDevice('hdd'));
+        document.getElementById('btn-device-ssd').addEventListener('click', () => switchDevice('ssd'));
+        document.getElementById('btn-device-nvme').addEventListener('click', () => switchDevice('nvme'));
+
+        function setMainViewMode(mode) {
+            currentViewMode = mode;
+            const bOpen = document.getElementById('btn-view-open');
+            const bClosed = document.getElementById('btn-view-closed');
+            const bExplode = document.getElementById('btn-view-explode');
+
+            const covGrp = getActiveCoverGroup();
+            const covMat = getActiveCoverMat();
+            const covId = getActiveCoverId();
+
+            [bOpen, bClosed, bExplode].forEach(b => {
+                b.className = 'px-3 py-1 rounded-full font-semibold opacity-75 hover:opacity-100 transition';
+            });
+
+            if (mode === 'open') {
+                bOpen.className = 'px-3 py-1 rounded-full font-bold bg-sky-600 text-white shadow transition';
+                gsap.to(state, { explode: 0, duration: 0.85, ease: 'power2.out', onUpdate: syncRangeUI });
+                gsap.to(covMat, {
+                    opacity: 0.0,
+                    duration: 0.4,
+                    onComplete: () => { if (currentViewMode === 'open' && activePartId !== covId) covGrp.visible = false; }
+                });
+                animateCameraTo(CAM_PRESETS.iso.pos, CAM_PRESETS.iso.target, 0.95);
+            } else if (mode === 'closed') {
+                bClosed.className = 'px-3 py-1 rounded-full font-bold bg-sky-600 text-white shadow transition';
+                covGrp.visible = true;
+                gsap.to(state, { explode: 0, duration: 0.85, ease: 'power2.out', onUpdate: syncRangeUI });
+                gsap.to(covMat, { opacity: 1.0, duration: 0.55 });
+                animateCameraTo(new THREE.Vector3(0.0, 11.2, 11.4), new THREE.Vector3(0.0, 0.25, 0.35), 0.95);
+            } else if (mode === 'explode') {
+                bExplode.className = 'px-3 py-1 rounded-full font-bold bg-amber-500 text-slate-950 shadow transition';
+                covGrp.visible = true;
+                gsap.to(covMat, { opacity: 0.92, duration: 0.5 });
+                gsap.to(state, { explode: 1, duration: 1.05, ease: 'power2.inOut', onUpdate: syncRangeUI });
+                animateCameraTo(new THREE.Vector3(10.8, 10.6, 13.4), new THREE.Vector3(0.0, 1.0, 0.0), 1.05);
+            }
+        }
+
+        function syncRangeUI() {
+            const pct = Math.round(state.explode * 100);
+            document.getElementById('explode-range').value = pct;
+            document.getElementById('explode-pct').textContent = `${pct}%`;
+        }
+
+        function animateCameraTo(posVec, targetVec, dur = 0.85) {
+            gsap.to(camera.position, {
+                x: posVec.x,
+                y: posVec.y,
+                z: posVec.z,
+                duration: dur,
+                ease: 'power3.out'
+            });
+            gsap.to(controls.target, {
+                x: targetVec.x,
+                y: targetVec.y,
+                z: targetVec.z,
+                duration: dur,
+                ease: 'power3.out'
+            });
+        }
+
+        function focusOnPart(partId, doZoom = true) {
+            activePartId = partId;
+            const part = PARTS_DATA.find(p => p.id === partId);
+            const covGrp = getActiveCoverGroup();
+            const covMat = getActiveCoverMat();
+            const covId = getActiveCoverId();
+
+            if (partId === covId) {
+                covGrp.visible = true;
+                gsap.to(covMat, { opacity: 0.96, duration: 0.45 });
+            } else if (partId && state.explode < 0.15) {
+                gsap.to(covMat, {
+                    opacity: 0.0,
+                    duration: 0.35,
+                    onComplete: () => { if (activePartId !== covId && state.explode < 0.15) covGrp.visible = false; }
+                });
+            }
+
+            // Tanlangan detalga engil nurlanish berish
+            clickableMeshes.forEach(m => {
+                if (m.material && m.material.emissive) {
+                    if (m.userData.partId === partId) {
+                        m.material.emissive.setHex(0x0284c7);
+                        m.material.emissiveIntensity = 0.38;
+                    } else {
+                        m.material.emissive.copy(m.userData.origEmissive);
+                        m.material.emissiveIntensity = 1.0;
+                    }
+                }
+            });
+
+            // Pinlar va pastki tugmalar holati
+            PARTS_DATA.forEach(p => {
+                const isAct = (p.id === partId);
+                if (pinDOM[p.id]) pinDOM[p.id].classList.toggle('active', isAct);
+                if (pillDOM[p.id]) {
+                    pillDOM[p.id].classList.toggle('active', isAct);
+                    if (isAct) {
+                        pillDOM[p.id].scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+                    }
+                }
+            });
+            document.getElementById('btn-all-parts').className = partId
+                ? 'px-2.5 py-1 rounded-full text-[10.5px] font-semibold bg-slate-800/70 hover:bg-slate-700 text-slate-200 whitespace-nowrap transition flex-shrink-0'
+                : 'px-2.5 py-1 rounded-full text-[10.5px] font-bold bg-sky-600 text-white whitespace-nowrap transition flex-shrink-0';
+
+            // Yakka ko'rish (Isolate) rejimi
+            if (isolatedMode && partId) {
+                Object.keys(partGroups).forEach(k => { partGroups[k].visible = (k === partId); });
+                if (currentDevice === 'hdd') chassisGroup.visible = false;
+            } else {
+                Object.keys(partGroups).forEach(k => {
+                    if (k === covId && state.explode < 0.15 && currentViewMode === 'open' && partId !== covId) {
+                        partGroups[k].visible = false;
+                    } else {
+                        partGroups[k].visible = true;
+                    }
+                });
+                if (currentDevice === 'hdd') chassisGroup.visible = true;
+            }
+
+            if (part) {
+                // O'ng-yuqori ixcham ma'lumot kartochkasini ko'rsatish
+                document.getElementById('card-num').textContent = part.num;
+                document.getElementById('card-title').textContent = part.name;
+                document.getElementById('card-en').textContent = part.en;
+                document.getElementById('card-desc').textContent = part.desc;
+                document.getElementById('card-specs').innerHTML = part.specs.map(s => `<div>${s}</div>`).join('');
+
+                infoCard.classList.remove('opacity-0', 'pointer-events-none', 'translate-x-6');
+                infoCard.classList.add('opacity-100', 'pointer-events-auto', 'translate-x-0');
+
+                if (doZoom) {
+                    const grp = partGroups[part.id];
+                    const curOffset = grp ? grp.position : new THREE.Vector3();
+                    animateCameraTo(
+                        part.zoomCam.clone().add(curOffset),
+                        part.zoomTarget.clone().add(curOffset),
+                        0.85
+                    );
+                }
+            } else {
+                infoCard.classList.add('opacity-0', 'pointer-events-none', 'translate-x-6');
+                infoCard.classList.remove('opacity-100', 'pointer-events-auto', 'translate-x-0');
+            }
+        }
+
+        // ============================================================================
+        // 8. RAYCASTING (3D DETAL USTIGA BOSISH) VA TUGMALARNI BOG'LASH
+        // ============================================================================
+        const raycaster = new THREE.Raycaster();
+        const pointer = new THREE.Vector2();
+        let downCoords = { x: 0, y: 0 };
+
+        renderer.domElement.addEventListener('pointerdown', (e) => {
+            downCoords = { x: e.clientX, y: e.clientY };
+        });
+
+        renderer.domElement.addEventListener('pointerup', (e) => {
+            if (Math.hypot(e.clientX - downCoords.x, e.clientY - downCoords.y) > 5) return;
+            pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
+            pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
+            raycaster.setFromCamera(pointer, camera);
+
+            const activeMeshes = clickableMeshes.filter(m => {
+                const grp = partGroups[m.userData.partId];
+                return grp && grp.visible;
+            });
+
+            const hits = raycaster.intersectObjects(activeMeshes, false);
+            if (hits.length > 0) {
+                const hitPartId = hits[0].object.userData.partId;
+                if (hitPartId) focusOnPart(hitPartId, true);
+            }
+        });
+
+        // Yuqori va pastki boshqaruv tugmalari
+        document.getElementById('btn-view-open').addEventListener('click', () => {
+            isolatedMode = false;
+            focusOnPart(null, false);
+            setMainViewMode('open');
+        });
+        document.getElementById('btn-view-closed').addEventListener('click', () => {
+            isolatedMode = false;
+            focusOnPart(null, false);
+            setMainViewMode('closed');
+        });
+        document.getElementById('btn-view-explode').addEventListener('click', () => {
+            isolatedMode = false;
+            focusOnPart(null, false);
+            setMainViewMode('explode');
+        });
+
+        document.getElementById('cam-iso').addEventListener('click', () => animateCameraTo(CAM_PRESETS.iso.pos, CAM_PRESETS.iso.target));
+        document.getElementById('cam-top').addEventListener('click', () => animateCameraTo(CAM_PRESETS.top.pos, CAM_PRESETS.top.target));
+        document.getElementById('cam-front').addEventListener('click', () => animateCameraTo(CAM_PRESETS.front.pos, CAM_PRESETS.front.target));
+
+        document.getElementById('btn-theme').addEventListener('click', () => {
+            document.body.classList.toggle('studio-light');
+        });
+
+        document.getElementById('btn-close-card').addEventListener('click', () => {
+            isolatedMode = false;
+            document.getElementById('btn-card-isolate').textContent = '👁️ Yakka o\'zi';
+            focusOnPart(null, false);
+            animateCameraTo(CAM_PRESETS.iso.pos, CAM_PRESETS.iso.target);
+        });
+
+        document.getElementById('btn-card-zoom').addEventListener('click', () => {
+            if (!activePartId) return;
+            const part = PARTS_DATA.find(p => p.id === activePartId);
+            const grp = partGroups[part.id];
+            const curOffset = grp ? grp.position : new THREE.Vector3();
+            // Yana 35% yaqinroq Makro Zoom
+            const dir = part.zoomCam.clone().sub(part.zoomTarget).multiplyScalar(0.62);
+            animateCameraTo(part.zoomTarget.clone().add(curOffset).add(dir), part.zoomTarget.clone().add(curOffset), 0.75);
+        });
+
+        document.getElementById('btn-card-isolate').addEventListener('click', (e) => {
+            if (!activePartId) return;
+            isolatedMode = !isolatedMode;
+            e.currentTarget.textContent = isolatedMode ? '🔄 Barchasi' : '👁️ Yakka o\'zi';
+            focusOnPart(activePartId, true);
+        });
+
+        document.getElementById('btn-all-parts').addEventListener('click', () => {
+            isolatedMode = false;
+            document.getElementById('btn-card-isolate').textContent = '👁️ Yakka o\'zi';
+            focusOnPart(null, false);
+            setMainViewMode('open');
+        });
+
+        document.getElementById('explode-range').addEventListener('input', (e) => {
+            state.explode = parseFloat(e.target.value) / 100;
+            syncRangeUI();
+            const covGrp = getActiveCoverGroup();
+            const covMat = getActiveCoverMat();
+            const covId = getActiveCoverId();
+            if (state.explode > 0.08) {
+                covGrp.visible = true;
+                covMat.opacity = Math.min(0.92, state.explode * 1.2);
+            } else if (currentViewMode === 'open' && activePartId !== covId) {
+                covMat.opacity = 0.0;
+                covGrp.visible = false;
+            }
+        });
+
+        document.getElementById('btn-quick-assemble').addEventListener('click', () => setMainViewMode('open'));
+        document.getElementById('btn-quick-explode').addEventListener('click', () => setMainViewMode('explode'));
+
+        document.getElementById('btn-power-toggle').addEventListener('click', (e) => {
+            isPowered = !isPowered;
+            const led = document.getElementById('status-led');
+            if (isPowered) {
+                e.currentTarget.textContent = '⚡ Quvvat: ON';
+                e.currentTarget.className = 'px-3 py-1 rounded-full bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-300 text-[11px] font-bold transition';
+                led.className = 'w-2.5 h-2.5 rounded-full bg-emerald-400 shadow-[0_0_10px_#34d399]';
+            } else {
+                e.currentTarget.textContent = (currentDevice === 'hdd') ? '⚡ Parkovka (OFF)' : '⚡ Kutish (OFF)';
+                e.currentTarget.className = 'px-3 py-1 rounded-full bg-amber-500/20 hover:bg-amber-500/30 border border-amber-400/40 text-amber-300 text-[11px] font-bold transition';
+                led.className = 'w-2.5 h-2.5 rounded-full bg-amber-400 shadow-[0_0_10px_#fbbf24]';
+            }
+        });
+
+        document.getElementById('btn-speed-toggle').addEventListener('click', (e) => {
+            rpmSpeed = (rpmSpeed === 7200) ? 600 : 7200;
+            if (currentDevice === 'hdd') {
+                e.currentTarget.textContent = (rpmSpeed === 7200) ? '⏱️ 7200 RPM' : '⏱️ Slow-Mo';
+            } else if (currentDevice === 'ssd') {
+                e.currentTarget.textContent = (rpmSpeed === 7200) ? '⚡ 560 MB/s' : '⚡ Slow-Pulse';
+            } else {
+                e.currentTarget.textContent = (rpmSpeed === 7200) ? '🚀 7450 MB/s' : '🚀 Slow-Pulse';
+            }
+        });
+
+        document.getElementById('btn-pins-toggle').addEventListener('click', (e) => {
+            pinsVisible = !pinsVisible;
+            pinsContainer.style.display = pinsVisible ? 'block' : 'none';
+            svgOverlay.style.display = pinsVisible ? 'block' : 'none';
+            e.currentTarget.textContent = pinsVisible ? '🏷️ Raqamlar: ON' : '🏷️ Raqamlar: OFF';
+        });
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        // ============================================================================
+        // 9. JONLI ANIMATSIYA VA TASHQI PERIMETR CALLOUT CHIZIQLARI
+        // ============================================================================
+        let angularVelocity = 0.46;
+        let currentArmAngle = 0.0;
+        let targetArmAngle = 0.0;
+        let seekTimer = 0;
+        const clock = new THREE.Clock();
+
+        function renderCalloutPins() {
+            if (!pinsVisible) return;
+            const w = window.innerWidth;
+            const h = window.innerHeight;
+            const hw = w / 2;
+            const hh = h / 2;
+
+            let svgContent = '';
+
+            PARTS_DATA.forEach(part => {
+                const grp = partGroups[part.id];
+                const pinEl = pinDOM[part.id];
+                if (!grp || !pinEl) return;
+
+                // Agar #5 Top Cover yashirin bo'lsa va tanlanmagan bo'lsa, faqat burchakdagi nuqtasiga bog'laymiz
+                if (isolatedMode && !grp.visible) {
+                    pinEl.style.opacity = '0';
+                    pinEl.style.pointerEvents = 'none';
+                    return;
+                }
+
+                const worldAnchor = part.anchorLocal.clone().add(grp.position);
+                const worldPin = part.pinOuter.clone().add(grp.position.clone().multiplyScalar(0.5));
+
+                const pA = worldAnchor.project(camera);
+                const pB = worldPin.project(camera);
+
+                if (pA.z > 1 || pB.z > 1) {
+                    pinEl.style.opacity = '0';
+                    pinEl.style.pointerEvents = 'none';
+                    return;
+                }
+
+                const ax = (pA.x * hw) + hw;
+                const ay = -(pA.y * hh) + hh;
+                const bx = (pB.x * hw) + hw;
+                const by = -(pB.y * hh) + hh;
+
+                pinEl.style.left = `${bx}px`;
+                pinEl.style.top = `${by}px`;
+                pinEl.style.opacity = '1';
+                pinEl.style.pointerEvents = 'auto';
+
+                const isAct = (activePartId === part.id);
+                const strokeColor = isAct ? '#f59e0b' : 'rgba(56, 189, 248, 0.72)';
+                const strokeWidth = isAct ? 2.2 : 1.35;
+
+                svgContent += `
+                    <line x1="${bx}" y1="${by}" x2="${ax}" y2="${ay}" stroke="${strokeColor}" stroke-width="${strokeWidth}" stroke-dasharray="${isAct ? 'none' : '4,3'}" />
+                    <circle cx="${ax}" cy="${ay}" r="${isAct ? 4.5 : 3}" fill="${isAct ? '#f59e0b' : '#38bdf8'}" stroke="#ffffff" stroke-width="1.2" />
+                `;
+            });
+
+            svgOverlay.innerHTML = svgContent;
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const dt = Math.min(clock.getDelta(), 0.1);
+            const elapsed = clock.getElapsedTime();
+
+            // 1. Faol qurilma (HDD yoki SSD) qismlarini Parchalash (Explode) interpolatsiyasi
+            PARTS_DATA.forEach(part => {
+                const grp = partGroups[part.id];
+                if (grp) {
+                    grp.position.lerpVectors(grp.userData.basePos, part.explodeOffset, state.explode);
+                }
+            });
+
+            if (currentDevice === 'hdd') {
+                // 4 ta plastinaning parchalanganda vertikal ochilishi
+                individualPlatters.forEach(layer => {
+                    const spreadY = (layer.userData.index - 1.5) * 0.46 * state.explode;
+                    layer.position.y = layer.userData.baseY + spreadY;
+                });
+
+                // 2. Plastinalar va Shpindel aylanishi
+                const targetVel = isPowered ? (rpmSpeed === 7200 ? 0.46 : 0.05) : 0.0;
+                angularVelocity += (targetVel - angularVelocity) * (isPowered ? 0.06 : 0.035);
+
+                plattersSpinGroup.rotation.y -= angularVelocity;
+                spindleSpinGroup.rotation.y -= angularVelocity;
+
+                const liveRPM = Math.round((angularVelocity / 0.46) * 7200);
+                document.getElementById('rpm-readout').textContent = `${liveRPM} RPM`;
+
+                // 3. Aktuator qo'li (#3) va O'qish/Yozish kallagi (#4) harakati
+                if (isPowered) {
+                    seekTimer -= dt;
+                    if (seekTimer <= 0) {
+                        targetArmAngle = -0.04 + Math.random() * 0.30;
+                        seekTimer = (rpmSpeed === 600) ? 1.0 : (0.20 + Math.random() * 0.42);
+                    }
+                    const servoJitter = Math.sin(elapsed * 45) * 0.004;
+                    currentArmAngle += ((targetArmAngle + servoJitter) - currentArmAngle) * 0.18;
+                } else {
+                    // Quvvat o'chirilganda kallak #7 To'q sariq Parkovka rampasiga (-0.34 rad) chiqadi
+                    currentArmAngle += (-0.34 - currentArmAngle) * 0.08;
+                }
+
+                actuatorPivotNode.rotation.y = currentArmAngle;
+                headPivotNode.rotation.y = currentArmAngle;
+            } else if (currentDevice === 'ssd') {
+                // SATA SSD REJIMI: Jonli elektron ma'lumot paketlarining PCB shinalari bo'ylab oqimi
+                const pulseSpeedFactor = isPowered ? (rpmSpeed === 7200 ? 1.0 : 0.22) : 0.0;
+                const liveMBs = isPowered ? (rpmSpeed === 7200 ? (545 + Math.round(Math.sin(elapsed * 9) * 15)) : 120) : 0;
+                document.getElementById('rpm-readout').textContent = `${liveMBs} MB/s`;
+
+                ssdDataPulses.forEach(p => {
+                    p.mesh.visible = isPowered;
+                    if (!isPowered) return;
+                    p.t = (p.t + dt * p.speed * pulseSpeedFactor) % 1.0;
+                    if (p.t < 0.5) {
+                        p.mesh.position.lerpVectors(p.p0, p.p1, p.t * 2.0);
+                    } else {
+                        p.mesh.position.lerpVectors(p.p1, p.p2, (p.t - 0.5) * 2.0);
+                    }
+                });
+            } else {
+                // M.2 NVMe SSD REJIMI: PCIe 4.0 x4 (7450 MB/s) yuqori tezlikdagi impulslar
+                const pulseSpeedFactor = isPowered ? (rpmSpeed === 7200 ? 1.0 : 0.20) : 0.0;
+                const liveNVMeMBs = isPowered ? (rpmSpeed === 7200 ? (7420 + Math.round(Math.sin(elapsed * 14) * 30)) : 1450) : 0;
+                document.getElementById('rpm-readout').textContent = `${liveNVMeMBs} MB/s`;
+
+                nvmeDataPulses.forEach(p => {
+                    p.mesh.visible = isPowered;
+                    if (!isPowered) return;
+                    p.t = (p.t + dt * p.speed * pulseSpeedFactor) % 1.0;
+                    if (p.t < 0.5) {
+                        p.mesh.position.lerpVectors(p.p0, p.p1, p.t * 2.0);
+                    } else {
+                        p.mesh.position.lerpVectors(p.p1, p.p2, (p.t - 0.5) * 2.0);
+                    }
+                });
+            }
+
+            controls.update();
+            renderCalloutPins();
+            renderer.render(scene, camera);
+        }
+
+        window.onload = function () {
+            animate();
+        };
+    </script>
+</body>
+</html>
